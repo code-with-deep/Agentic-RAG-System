@@ -1,0 +1,38 @@
+# Agentic RAG System - Dependencies
+
+# Core API Framework
+fastapi==0.115.9
+uvicorn[standard]==0.34.2
+python-multipart==0.0.20
+python-dotenv==1.1.0
+pydantic-settings==2.9.1
+pydantic[email]==2.11.2
+
+# Database
+sqlalchemy==2.0.40
+aiosqlite==0.21.0
+
+# LangChain Ecosystem
+langchain==0.3.25
+langchain-community==0.3.24
+langchain-google-genai==2.1.4
+langchain-groq==0.3.2
+
+# Vector Store and Embeddings
+chromadb==1.0.7
+sentence-transformers==4.1.0
+
+# Retrieval
+rank-bm25==0.2.2
+
+# Document Parsing
+pypdf==5.6.0
+docx2txt==0.8
+unstructured==0.17.2
+
+# Web Search
+tavily-python==0.5.0
+duckduckgo-search==8.0.1
+
+# HTTP Client
+httpx==0.28.1
