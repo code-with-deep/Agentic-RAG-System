@@ -1,9 +1,3 @@
-"""
-Agentic RAG System — Async SQLAlchemy Database Layer
-
-Defines all five tables (documents, queries, claims, decision_trace, iterations),
-the async engine/session factory, and startup helpers.
-"""
 
 import uuid
 from datetime import datetime, timezone

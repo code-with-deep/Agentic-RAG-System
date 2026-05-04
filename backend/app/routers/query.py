@@ -1,21 +1,21 @@
 """
 Agentic RAG System -- Query Processing Routes
 
-Test endpoints for Part 3 (routing + CRAG). Will be expanded with
-full agentic and simple RAG endpoints in Part 6.
+Production endpoints for the Agentic RAG pipeline and Simple RAG baseline.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-from app.services.corrective_rag import run_crag
-from app.services.decision_tracer import DecisionTracer
-from app.services.query_router import route_query
-from app.services.hallucination_detector import detect
-from app.services.confidence_scorer import score
+from app.models.database import Claim, DecisionTrace, Iteration, Query, get_db
+from app.models.schemas import AgenticResponse, SimpleRAGResponse, StatsResponse
+from app.services import agent_orchestrator
 
 logger = logging.getLogger("agentic_rag.routers.query")
 
@@ -23,134 +23,194 @@ router = APIRouter(tags=["query"])
 
 
 # ---------------------------------------------------------------------------
-# Request models for test endpoints
+# Request Models
 # ---------------------------------------------------------------------------
-class TestRoutingRequest(BaseModel):
+class QueryRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    conversation_history: Optional[List[dict]] = Field(default_factory=list)
+
+
+class SimpleQueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
 
 
-class TestCRAGRequest(BaseModel):
-    query: str = Field(..., min_length=1)
-    strategy: Optional[str] = Field(default="hybrid_rerank")
-
-
 # ---------------------------------------------------------------------------
-# POST /api/query/test-routing
+# Execution Endpoints
 # ---------------------------------------------------------------------------
-@router.post("/query/test-routing")
-async def test_routing(request: TestRoutingRequest):
-    """Test query classification and strategy routing."""
-    result = await route_query(request.query)
-    return {
-        "query": request.query,
-        "query_type": result["query_type"],
-        "confidence": result["confidence"],
-        "strategy": result["strategy"],
-        "reasoning": result["reasoning"],
-        "confidence_override": result["confidence_override"],
-        "alternative_type": result["alternative_type"],
-    }
-
-
-# ---------------------------------------------------------------------------
-# POST /api/query/test-crag
-# ---------------------------------------------------------------------------
-@router.post("/query/test-crag")
-async def test_crag(request: TestCRAGRequest):
-    """Test the full CRAG pipeline: retrieve -> evaluate -> decide."""
-    tracer = DecisionTracer()
-
-    crag_result = await run_crag(
-        query=request.query,
-        strategy=request.strategy,
-        tracer=tracer,
+@router.post("/query", response_model=AgenticResponse)
+async def execute_agentic_query(
+    request: QueryRequest, 
+    response: Response,
+    db: AsyncSession = Depends(get_db)
+):
+    """Run the complete Agentic RAG pipeline (10 steps)."""
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+    result = await agent_orchestrator.run(
+        query=request.query, 
+        conversation_history=request.conversation_history,
+        db=db
     )
-
-    return {
-        "query": request.query,
-        "strategy_requested": request.strategy,
-        "crag_decision": crag_result["decision"],
-        "strategy_used": crag_result.get("strategy_used", request.strategy),
-        "attempt_number": crag_result.get("attempt_number", 1),
-        "chunks_returned": len(crag_result.get("chunks", [])),
-        "all_chunks_count": len(crag_result.get("all_chunks", [])),
-        "decision_trace": tracer.get_trace(),
-        "trace_summary": tracer.get_summary(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Request models for Part 4 test endpoints
-# ---------------------------------------------------------------------------
-class TestHallucinationRequest(BaseModel):
-    answer: str
-    context: str
-
-class TestConfidenceRequest(BaseModel):
-    query: str
-    answer: str
-    context: str
-    hallucination_score: float
-
-# ---------------------------------------------------------------------------
-# POST /api/query/test-hallucination
-# ---------------------------------------------------------------------------
-@router.post("/query/test-hallucination")
-async def test_hallucination(request: TestHallucinationRequest):
-    """Test the hallucination detection pipeline."""
-    mock_chunks = [
-        {
-            "chunk_id": "mock_1",
-            "source": "test_document.txt",
-            "text": request.context
-        }
-    ]
-    tracer = DecisionTracer()
     
-    result = await detect(request.answer, mock_chunks, tracer=tracer)
-    
-    return {
-        "hallucination_score": result["hallucination_score"],
-        "regenerate": result["regenerate"],
-        "total_claims": result["total_claims"],
-        "unsupported_claims": result["unsupported_claims"],
-        "verification_summary": result["verification_summary"],
-        "claims": result["claims"],
-        "trace": tracer.get_trace()
-    }
-
-# ---------------------------------------------------------------------------
-# POST /api/query/test-confidence
-# ---------------------------------------------------------------------------
-@router.post("/query/test-confidence")
-async def test_confidence(request: TestConfidenceRequest):
-    """Test the 4-factor confidence scoring pipeline."""
-    mock_chunks = [
-        {
-            "chunk_id": "mock_1",
-            "source": "test_document.txt",
-            "text": request.context
-        }
-    ]
-    
-    mock_classifications = [
-        {
-            "chunk_id": "mock_1",
-            "classification": "CORRECT",
-            "relevance_score": 1.0,
-            "reasoning": "Mock evaluation"
-        }
-    ]
-    
-    tracer = DecisionTracer()
-    
-    result = await score(
-        query=request.query,
-        answer=request.answer,
-        context_chunks=mock_chunks,
-        chunk_classifications=mock_classifications,
-        hallucination_score=request.hallucination_score,
-        tracer=tracer
-    )
+    # Add custom header for tracking total latency easily in clients
+    latency = result.get("total_latency_ms", 0)
+    response.headers["X-Response-Time"] = f"{latency}ms"
     
     return result
+
+
+@router.post("/query/simple", response_model=SimpleRAGResponse)
+async def execute_simple_query(
+    request: SimpleQueryRequest, 
+    db: AsyncSession = Depends(get_db)
+):
+    """Run the basic RAG baseline for comparison."""
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+    result = await agent_orchestrator.run_simple(query=request.query, db=db)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Telemetry & Observability Endpoints
+# ---------------------------------------------------------------------------
+@router.get("/query/{query_id}/trace")
+async def get_decision_trace(query_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve the step-by-step decision trace for a specific query."""
+    stmt = select(DecisionTrace).where(DecisionTrace.query_id == query_id).order_by(DecisionTrace.timestamp)
+    result = await db.execute(stmt)
+    traces = result.scalars().all()
+    
+    if not traces:
+        # Check if query exists at all
+        query_check = await db.execute(select(Query).where(Query.id == query_id))
+        if not query_check.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Query ID not found")
+        return []
+        
+    return [
+        {
+            "step_number": i + 1,
+            "step_name": t.step_name,
+            "decision": t.decision,
+            "reasoning": t.reasoning,
+            "input_summary": t.input_summary,
+            "output_summary": t.output_summary,
+            "time_taken_ms": t.time_taken_ms,
+            "alternatives_considered": t.alternatives_considered,
+            "timestamp": t.timestamp.isoformat()
+        } for i, t in enumerate(traces)
+    ]
+
+
+@router.get("/query/{query_id}/claims")
+async def get_query_claims(query_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve the verified claims extracted from a specific query's answer."""
+    stmt = select(Claim).where(Claim.query_id == query_id)
+    result = await db.execute(stmt)
+    claims = result.scalars().all()
+    
+    if not claims:
+        # Check if query exists at all
+        query_check = await db.execute(select(Query).where(Query.id == query_id))
+        if not query_check.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Query ID not found")
+        return []
+        
+    return [
+        {
+            "id": c.id,
+            "claim_text": c.claim_text,
+            "verification_status": c.verification_status,
+            "supporting_chunk_id": c.supporting_chunk_id,
+            "confidence": c.confidence
+        } for c in claims
+    ]
+
+
+@router.get("/query/{query_id}/iterations")
+async def get_query_iterations(query_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve the refinement iterations for a specific query."""
+    stmt = select(Iteration).where(Iteration.query_id == query_id).order_by(Iteration.iteration_number)
+    result = await db.execute(stmt)
+    iterations = result.scalars().all()
+    
+    if not iterations:
+        # Check if query exists at all
+        query_check = await db.execute(select(Query).where(Query.id == query_id))
+        if not query_check.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Query ID not found")
+        return []
+        
+    return [
+        {
+            "id": it.id,
+            "iteration_number": it.iteration_number,
+            "answer_generated": it.answer_generated,
+            "hallucination_score": it.hallucination_score,
+            "confidence_score": it.confidence_score,
+            "changes_made": it.changes_made,
+            "timestamp": it.timestamp.isoformat()
+        } for it in iterations
+    ]
+
+
+@router.get("/stats", response_model=StatsResponse)
+async def get_system_stats(db: AsyncSession = Depends(get_db)):
+    """Retrieve aggregate system performance statistics."""
+    # Count total agentic queries
+    stmt = select(func.count(Query.id)).where(Query.source_label != "SIMPLE_RAG")
+    total_queries = (await db.execute(stmt)).scalar() or 0
+    
+    if total_queries == 0:
+        return {
+            "avg_confidence": 0.0,
+            "retry_rate": 0.0,
+            "fallback_rate": 0.0,
+            "avg_latency_ms": 0.0,
+            "total_queries": 0,
+            "hallucination_catch_rate": 0.0
+        }
+        
+    # Average confidence
+    stmt = select(func.avg(Query.confidence_score)).where(Query.source_label != "SIMPLE_RAG")
+    avg_confidence = (await db.execute(stmt)).scalar() or 0.0
+    
+    # Retry rate (queries with iterations > 1)
+    stmt = select(func.count(Query.id)).where(
+        Query.source_label != "SIMPLE_RAG",
+        Query.iterations_count > 1
+    )
+    retry_count = (await db.execute(stmt)).scalar() or 0
+    retry_rate = (retry_count / total_queries) * 100
+    
+    # Fallback rate (queries with fallback_level > 0)
+    stmt = select(func.count(Query.id)).where(
+        Query.source_label != "SIMPLE_RAG",
+        Query.fallback_level > 0
+    )
+    fallback_count = (await db.execute(stmt)).scalar() or 0
+    fallback_rate = (fallback_count / total_queries) * 100
+    
+    # Average latency
+    stmt = select(func.avg(Query.total_latency_ms)).where(Query.source_label != "SIMPLE_RAG")
+    avg_latency_ms = (await db.execute(stmt)).scalar() or 0.0
+    
+    # Hallucination catch rate (queries with score > 0)
+    stmt = select(func.count(Query.id)).where(
+        Query.source_label != "SIMPLE_RAG",
+        Query.hallucination_score > 0.0
+    )
+    hallucination_caught = (await db.execute(stmt)).scalar() or 0
+    hallucination_catch_rate = (hallucination_caught / total_queries) * 100
+    
+    return {
+        "avg_confidence": round(avg_confidence, 2),
+        "retry_rate": round(retry_rate, 2),
+        "fallback_rate": round(fallback_rate, 2),
+        "avg_latency_ms": round(avg_latency_ms, 2),
+        "total_queries": total_queries,
+        "hallucination_catch_rate": round(hallucination_catch_rate, 2)
+    }

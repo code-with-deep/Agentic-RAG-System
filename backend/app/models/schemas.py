@@ -1,8 +1,4 @@
-"""
-Agentic RAG System — Pydantic v2 Schemas
 
-All request and response models used across the API.
-"""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
