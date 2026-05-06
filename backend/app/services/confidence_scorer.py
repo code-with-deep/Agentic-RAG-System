@@ -34,11 +34,11 @@ Retrieved Context:
 Score how well the context covers the information needed to answer
 this question completely.
 
-0.0 - Context contains no relevant information
-0.3 - Context contains minimal relevant information
-0.5 - Context partially covers the question
-0.7 - Context mostly covers the question with minor gaps
-0.9 - Context fully covers the question
+0.0 - Context contains no relevant information at all
+0.2 - Context contains only vaguely related terms but no real answer
+0.4 - Context contains a minor hint but is mostly insufficient
+0.6 - Context answers about half of the question
+0.8 - Context answers most of the question but misses some details
 1.0 - Context contains complete and detailed information to fully answer
 
 Respond with ONLY a valid JSON object. No explanation. No markdown.
@@ -61,12 +61,12 @@ Score the answer on these criteria combined into a single score:
 - Is the answer complete and not cut off mid-thought?
 - Does the answer avoid unnecessary repetition?
 
-0.0 - Answer does not address the question at all
-0.3 - Answer is mostly off-topic or very poorly structured
-0.5 - Answer partially addresses the question
-0.7 - Answer addresses the question but has structural issues
-0.9 - Answer directly and clearly addresses the question
-1.0 - Answer is perfectly structured and completely addresses the question
+0.0 - Answer is completely wrong or does not address the question at all
+0.2 - Answer is extremely poor, mostly off-topic or incomprehensible
+0.4 - Answer hints at the right topic but fails to actually answer it clearly
+0.6 - Answer is okay, partially addresses the question but has structure issues
+0.8 - Answer directly addresses the question with minor flaws
+1.0 - Answer is perfectly structured, accurate, and completely addresses the question
 
 Respond with ONLY a valid JSON object. No explanation. No markdown.
 Format:

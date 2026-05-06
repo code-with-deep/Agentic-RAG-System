@@ -1,9 +1,4 @@
-"""
-Agentic RAG System — FastAPI Application Entry Point
 
-Initializes the app, mounts routers, configures middleware,
-and runs database migrations on startup.
-"""
 import os
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 import logging
@@ -22,6 +17,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
+
+import sys
+print(f"Python executable: {sys.executable}")
 
 
 @asynccontextmanager

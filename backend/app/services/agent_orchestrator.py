@@ -1,11 +1,3 @@
-"""
-Agentic RAG System -- Master Orchestrator
-
-Ties together all pipeline components into the final Agentic run.
-Handles State, Query Routing, CRAG, Fallbacks, Hallucination Checks,
-and Iterative Refinement.
-"""
-
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,7 +23,6 @@ logger = logging.getLogger("agentic_rag.orchestrator")
 
 @dataclass
 class AgentState:
-    """Holds the complete state of a pipeline run."""
     query_id: str = field(default_factory=lambda: str(uuid4()))
     original_query: str = ""
     query_type: str = ""
@@ -57,7 +48,6 @@ async def run(
     conversation_history: Optional[List[dict]] = None, 
     db=None
 ) -> Dict[str, Any]:
-    """Execute the complete 10-step agentic pipeline."""
     state = AgentState()
     state.original_query = query
     state.conversation_history = conversation_history or []
@@ -66,7 +56,6 @@ async def run(
     logger.info("Starting Agentic Pipeline for query: %s", state.query_id)
 
     try:
-        # STEP 1 -- Query Classification & Routing
         routing_result = await query_router.route_query(query)
         state.query_type = routing_result["query_type"]
         state.routing_confidence = routing_result["confidence"]
@@ -81,7 +70,6 @@ async def run(
             alternatives_considered=[routing_result.get("alternative_type")]
         )
 
-        # STEP 2 -- CRAG Retrieval + Evaluation
         crag_result = await corrective_rag.run_crag(
             query=query,
             strategy=state.strategy_used,
@@ -91,7 +79,6 @@ async def run(
         )
         state.crag_result = crag_result
 
-        # STEP 3 -- Check if CRAG triggered FALLBACK
         if crag_result.get("decision") == "FALLBACK":
             fallback_result = await fallback_chain.execute(
                 query=query,
@@ -164,6 +151,11 @@ async def run(
         # STEP 8 -- Final Confidence Score 
         if state.fallback_level > 0:
             state.confidence_result = {
+                "retrieval_relevance": 0.0,
+                "faithfulness": 0.0,
+                "context_coverage": 0.0,
+                "coherence": 0.0,
+                "final_score": 0.3,
                 "confidence_percentage": 30.0,
                 "confidence_level": "VERY_LOW",
                 "confidence_badge": "Very Low Confidence",

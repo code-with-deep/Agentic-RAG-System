@@ -1,110 +1,79 @@
-# ========================
 # Python
-# ========================
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
 *.pyo
 *.pyd
 .Python
-build/
-dist/
-*.egg-info/
-*.egg
-*.manifest
-*.spec
-pip-log.txt
-pip-delete-this-directory.txt
-
-# ========================
-# Virtual Environments
-# ========================
+env/
 venv/
 .venv/
-env/
-ENV/
-
-# ========================
-# Environment Variables
-# ========================
-.env
-.env.local
-.env.production
-.env.*.local
-
-# ========================
-# Databases
-# ========================
-*.db
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+*.egg-info/
+dist/
+build/
+*.so
+*.egg
+local_settings.py
+db.sqlite3
 *.sqlite3
-*.sqlite
 
-# ========================
-# Vector Store / ChromaDB
-# ========================
-chroma_data/
-backend/chroma_data/
+# Environment variables
+.env
+.env.*
 
-# ========================
-# BM25 Index Cache
-# ========================
-*.pkl
-
-# ========================
-# IDE / Editor
-# ========================
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.project
-.classpath
-.settings/
-
-# ========================
-# OS System Files
-# ========================
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# ========================
-# Logs
-# ========================
-*.log
-logs/
-
-# ========================
-# Node.js / Frontend
-# ========================
+# Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnp/
-.pnp.js
-.next/
-out/
+lerna-debug.log*
+.pnpm-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-g]*json
+lib/
+lib-cov/
+coverage/
+.nyc_output/
+.grunt/
+bower_components/
+.lock-wscript
 build/
 dist/
+.npm/
+.next/
+.nuxt/
+.svelte-kit/
+.vite-inspect/
 
-# ========================
-# Testing / Coverage
-# ========================
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-.nox/
-coverage.xml
-*.cover
+# OS and IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# ========================
-# Misc
-# ========================
-*.bak
-*.tmp
-*.temp
-.cache/
+# Project specific
+chroma_data/
+data/sqlite/
+data/chromadb/
+sample_documents/
+frontend/dist/
+frontend/node_modules/
+backend/chroma_data/
+backend/data/
+backend/__pycache__/
+*.log
+logs
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
