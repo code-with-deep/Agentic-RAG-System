@@ -15,12 +15,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from app.config import settings
-from app.services.ingestion import (
-    bm25_corpus,
-    bm25_index,
-    chroma_collection,
-    embedding_model,
-)
+from app.services import ingestion
 from app.services.reranker import rerank_with_metadata
 
 logger = logging.getLogger("agentic_rag.retrieval")
@@ -89,23 +84,24 @@ async def retrieve_basic_vector(
     query: str, top_k: int = 20, filters: Optional[dict] = None
 ) -> List[dict]:
     """Embed query and search ChromaDB for nearest neighbours."""
-    if chroma_collection.count() == 0:
+    collection = ingestion.get_chroma_collection()
+    if collection.count() == 0:
         logger.warning("ChromaDB collection is empty -- returning no results")
         return []
 
     query_embedding = await asyncio.to_thread(
-        embedding_model.encode, query, show_progress_bar=False
+        ingestion.get_embedding_model().encode, query, show_progress_bar=False
     )
 
     kwargs: Dict[str, Any] = {
         "query_embeddings": [query_embedding.tolist()],
-        "n_results": min(top_k, chroma_collection.count()),
+        "n_results": min(top_k, collection.count()),
         "include": ["documents", "metadatas", "distances"],
     }
     if filters:
         kwargs["where"] = filters
 
-    results = await asyncio.to_thread(chroma_collection.query, **kwargs)
+    results = await asyncio.to_thread(collection.query, **kwargs)
 
     chunks: List[dict] = []
     if not results["ids"] or not results["ids"][0]:
@@ -133,12 +129,12 @@ async def retrieve_basic_vector(
 # ---------------------------------------------------------------------------
 def retrieve_bm25(query: str, top_k: int = 20) -> List[dict]:
     """Tokenize query and score all documents with BM25."""
-    if bm25_index is None or not bm25_corpus:
+    if ingestion.bm25_index is None or not ingestion.bm25_corpus:
         logger.warning("BM25 index not available -- returning no results")
         return []
 
     tokens = query.lower().split()
-    scores = bm25_index.get_scores(tokens)
+    scores = ingestion.bm25_index.get_scores(tokens)
 
     scored_indices = sorted(
         range(len(scores)), key=lambda i: scores[i], reverse=True
@@ -148,7 +144,7 @@ def retrieve_bm25(query: str, top_k: int = 20) -> List[dict]:
     for idx in scored_indices:
         if scores[idx] <= 0:
             continue
-        entry = bm25_corpus[idx].copy()
+        entry = ingestion.bm25_corpus[idx].copy()
         meta = entry.pop("metadata", {})
         entry.update(meta)
         entry["bm25_score"] = float(scores[idx])

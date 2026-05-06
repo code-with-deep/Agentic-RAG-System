@@ -18,11 +18,18 @@ logger = logging.getLogger("agentic_rag.reranker")
 # ---------------------------------------------------------------------------
 # Module-level singleton
 # ---------------------------------------------------------------------------
-_start = time.perf_counter()
-logger.info("Loading CrossEncoder model: %s ...", settings.reranker_model)
-cross_encoder = CrossEncoder(settings.reranker_model)
-_elapsed = time.perf_counter() - _start
-logger.info("CrossEncoder model loaded in %.2f seconds", _elapsed)
+_cross_encoder = None
+def get_cross_encoder():
+    global _cross_encoder
+    if _cross_encoder is None:
+        import torch
+        torch.set_num_threads(1)
+        _start = time.perf_counter()
+        logger.info("Loading CrossEncoder model: %s ...", settings.reranker_model)
+        _cross_encoder = CrossEncoder(settings.reranker_model, device="cpu")
+        _elapsed = time.perf_counter() - _start
+        logger.info("CrossEncoder model loaded in %.2f seconds", _elapsed)
+    return _cross_encoder
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +47,7 @@ def rerank(query: str, chunks: List[dict], top_k: int = 5) -> List[dict]:
         return []
 
     pairs = [[query, chunk["text"]] for chunk in chunks]
-    scores = cross_encoder.predict(pairs)
+    scores = get_cross_encoder().predict(pairs)
 
     for idx, chunk in enumerate(chunks):
         chunk["original_rank"] = idx + 1

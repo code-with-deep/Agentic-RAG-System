@@ -35,19 +35,32 @@ from app.config import settings
 logger = logging.getLogger("agentic_rag.ingestion")
 
 # ---------------------------------------------------------------------------
-# Module-level singletons (loaded once on first import)
+# Module-level singletons (lazy loaded)
 # ---------------------------------------------------------------------------
-logger.info("Loading SentenceTransformer model: %s ...", settings.embedding_model)
-embedding_model = SentenceTransformer(settings.embedding_model)
-logger.info("SentenceTransformer model loaded successfully")
+_embedding_model = None
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        import torch
+        torch.set_num_threads(1)
+        logger.info("Loading SentenceTransformer model: %s ...", settings.embedding_model)
+        _embedding_model = SentenceTransformer(settings.embedding_model, device="cpu")
+        logger.info("SentenceTransformer model loaded successfully")
+    return _embedding_model
 
-logger.info("Initialising ChromaDB persistent client at: %s", settings.chroma_db_path)
-chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
-chroma_collection = chroma_client.get_or_create_collection(
-    name="agentic_rag_chunks",
-    metadata={"hnsw:space": "cosine"},
-)
-logger.info("ChromaDB collection 'agentic_rag_chunks' ready (%d existing docs)", chroma_collection.count())
+_chroma_client = None
+_chroma_collection = None
+def get_chroma_collection():
+    global _chroma_client, _chroma_collection
+    if _chroma_collection is None:
+        logger.info("Initialising ChromaDB persistent client at: %s", settings.chroma_db_path)
+        _chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
+        _chroma_collection = _chroma_client.get_or_create_collection(
+            name="agentic_rag_chunks",
+            metadata={"hnsw:space": "cosine"},
+        )
+        logger.info("ChromaDB collection 'agentic_rag_chunks' ready")
+    return _chroma_collection
 
 # BM25 index persistence path (next to chroma data)
 _bm25_path = Path(settings.chroma_db_path) / "bm25_index.pkl"
@@ -83,14 +96,15 @@ def _save_bm25_to_disk() -> None:
 def _rebuild_bm25_from_chroma() -> None:
     """Rebuild BM25 index from all chunks currently in ChromaDB."""
     global bm25_index, bm25_corpus
-    total = chroma_collection.count()
+    collection = get_chroma_collection()
+    total = collection.count()
     if total == 0:
         bm25_index = None
         bm25_corpus = []
         _save_bm25_to_disk()
         return
 
-    all_data = chroma_collection.get(include=["documents", "metadatas"])
+    all_data = collection.get(include=["documents", "metadatas"])
     tokenized = []
     corpus_items: List[Dict[str, Any]] = []
     for idx, (doc_text, meta, cid) in enumerate(
@@ -105,8 +119,9 @@ def _rebuild_bm25_from_chroma() -> None:
     _save_bm25_to_disk()
 
 
-# Load BM25 from disk on module import
-_load_bm25_from_disk()
+# We do not load bm25 from disk on import anymore, to save memory.
+# It will be loaded on demand or explicitly in startup.
+# _load_bm25_from_disk()
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +303,7 @@ def chunk_semantic(docs: List[LCDocument], doc_id: str) -> List[dict]:
             "chunk_index": 0,
         }]
 
-    embeddings = embedding_model.encode(sentences, show_progress_bar=False)
+    embeddings = get_embedding_model().encode(sentences, show_progress_bar=False)
 
     similarity_threshold = 0.75
     max_chunk_chars = 2400  # ~600 tokens at 4 chars/token
@@ -359,13 +374,13 @@ def _store_chunks_in_chroma(chunks: List[dict]) -> None:
         batch = chunks[start : start + batch_size]
         ids = [c["chunk_id"] for c in batch]
         documents = [c["text"] for c in batch]
-        embeddings = embedding_model.encode(documents, show_progress_bar=False).tolist()
+        embeddings = get_embedding_model().encode(documents, show_progress_bar=False).tolist()
         metadatas = []
         for c in batch:
             meta = {k: v for k, v in c.items() if k not in ("text",)}
             metadatas.append(_flatten_metadata(meta))
 
-        chroma_collection.add(
+        get_chroma_collection().add(
             ids=ids,
             documents=documents,
             embeddings=embeddings,
@@ -460,12 +475,13 @@ def get_all_chunks(filters: Optional[dict] = None) -> List[dict]:
     if filters:
         kwargs["where"] = filters
 
-    total = chroma_collection.count()
+    collection = get_chroma_collection()
+    total = collection.count()
     if total == 0:
         return []
 
     kwargs["limit"] = total
-    results = chroma_collection.get(**kwargs)
+    results = collection.get(**kwargs)
 
     chunks = []
     for idx in range(len(results["ids"])):
@@ -482,14 +498,15 @@ def get_all_chunks(filters: Optional[dict] = None) -> List[dict]:
 
 def delete_document_chunks(doc_id: str) -> int:
     """Delete all chunks belonging to a document and rebuild BM25."""
-    existing = chroma_collection.get(where={"doc_id": doc_id}, include=[])
+    collection = get_chroma_collection()
+    existing = collection.get(where={"doc_id": doc_id}, include=[])
     chunk_ids = existing["ids"]
 
     if not chunk_ids:
         logger.info("No chunks found in ChromaDB for doc_id=%s", doc_id)
         return 0
 
-    chroma_collection.delete(ids=chunk_ids)
+    collection.delete(ids=chunk_ids)
     count = len(chunk_ids)
     logger.info("Deleted %d chunks from ChromaDB for doc_id=%s", count, doc_id)
 
