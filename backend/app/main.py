@@ -1,6 +1,14 @@
 
 import os
+# --- Memory and Thread Optimizations for 512MB RAM Limit ---
+os.environ["MALLOC_ARENA_MAX"] = "2"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator

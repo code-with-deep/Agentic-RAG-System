@@ -26,9 +26,6 @@ from langchain_community.document_loaders import (
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document as LCDocument
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
-
-import chromadb
 
 from app.config import settings
 
@@ -42,6 +39,7 @@ def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         import torch
+        from sentence_transformers import SentenceTransformer
         torch.set_num_threads(1)
         logger.info("Loading SentenceTransformer model: %s ...", settings.embedding_model)
         _embedding_model = SentenceTransformer(settings.embedding_model, device="cpu")
@@ -53,6 +51,7 @@ _chroma_collection = None
 def get_chroma_collection():
     global _chroma_client, _chroma_collection
     if _chroma_collection is None:
+        import chromadb
         logger.info("Initialising ChromaDB persistent client at: %s", settings.chroma_db_path)
         _chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
         _chroma_collection = _chroma_client.get_or_create_collection(

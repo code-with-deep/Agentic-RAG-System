@@ -9,8 +9,6 @@ import logging
 import time
 from typing import Any, Dict, List
 
-from sentence_transformers import CrossEncoder
-
 from app.config import settings
 
 logger = logging.getLogger("agentic_rag.reranker")
@@ -23,6 +21,7 @@ def get_cross_encoder():
     global _cross_encoder
     if _cross_encoder is None:
         import torch
+        from sentence_transformers import CrossEncoder
         torch.set_num_threads(1)
         _start = time.perf_counter()
         logger.info("Loading CrossEncoder model: %s ...", settings.reranker_model)
