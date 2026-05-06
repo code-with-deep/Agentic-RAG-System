@@ -104,6 +104,28 @@ class Iteration(Base):
     query = relationship("Query", back_populates="iterations")
 
 
+class EvaluationResult(Base):
+    __tablename__ = "evaluation_results"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    job_id = Column(String, unique=True, nullable=False)
+    dataset_path = Column(String, nullable=False)
+    total_questions = Column(Integer, nullable=False)
+    pass_rate = Column(Float, nullable=False)
+    agentic_faithfulness = Column(Float, nullable=False)
+    agentic_relevancy = Column(Float, nullable=False)
+    agentic_accuracy = Column(Float, nullable=False)
+    agentic_hallucination = Column(Float, nullable=False)
+    simple_faithfulness = Column(Float, nullable=False)
+    simple_relevancy = Column(Float, nullable=False)
+    simple_accuracy = Column(Float, nullable=False)
+    simple_hallucination = Column(Float, nullable=False)
+    overall_improvement = Column(Float, nullable=False)
+    hallucination_reduction = Column(Float, nullable=False)
+    summary = Column(Text, nullable=False)
+    per_question_results = Column(JSON, nullable=False)
+    evaluated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields an async database session."""
     async with async_session_factory() as session:

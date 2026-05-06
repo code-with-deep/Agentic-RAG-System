@@ -4,7 +4,8 @@ Agentic RAG System — FastAPI Application Entry Point
 Initializes the app, mounts routers, configures middleware,
 and runs database migrations on startup.
 """
-
+import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator

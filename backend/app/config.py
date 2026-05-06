@@ -11,6 +11,8 @@ from typing import Dict
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 class Settings(BaseSettings):
     """Application-wide settings loaded from .env with defaults."""
