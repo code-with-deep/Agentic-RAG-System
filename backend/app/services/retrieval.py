@@ -81,7 +81,10 @@ def reciprocal_rank_fusion(
 # Strategy 1 -- Basic Vector Search
 # ---------------------------------------------------------------------------
 async def retrieve_basic_vector(
-    query: str, top_k: int = 20, filters: Optional[dict] = None
+    query: str, 
+    top_k: int = 20, 
+    filters: Optional[dict] = None,
+    user_id: Optional[str] = None
 ) -> List[dict]:
     """Embed query and search ChromaDB for nearest neighbours."""
     collection = ingestion.get_chroma_collection()
@@ -93,13 +96,24 @@ async def retrieve_basic_vector(
         ingestion.get_embedding_model().encode, query, show_progress_bar=False
     )
 
+    # Combine user filter with any provided filters
+    chroma_filters = {}
+    if user_id:
+        chroma_filters["user_id"] = user_id
+    
+    if filters:
+        if chroma_filters:
+            chroma_filters = {"$and": [chroma_filters, filters]}
+        else:
+            chroma_filters = filters
+
     kwargs: Dict[str, Any] = {
         "query_embeddings": [query_embedding.tolist()],
-        "n_results": min(top_k, collection.count()),
+        "n_results": max(1, min(top_k, collection.count() or 1)),
         "include": ["documents", "metadatas", "distances"],
     }
-    if filters:
-        kwargs["where"] = filters
+    if chroma_filters:
+        kwargs["where"] = chroma_filters
 
     results = await asyncio.to_thread(collection.query, **kwargs)
 
@@ -120,21 +134,26 @@ async def retrieve_basic_vector(
         chunk.update(meta)
         chunks.append(_normalise_chunk(chunk))
 
-    logger.info("Basic vector search returned %d chunks for query", len(chunks))
+    logger.info("Basic vector search returned %d chunks for query (user_id=%s)", len(chunks), user_id)
     return chunks
 
 
 # ---------------------------------------------------------------------------
 # Strategy 2 -- BM25 Keyword Search
 # ---------------------------------------------------------------------------
-def retrieve_bm25(query: str, top_k: int = 20) -> List[dict]:
-    """Tokenize query and score all documents with BM25."""
-    if ingestion.bm25_index is None or not ingestion.bm25_corpus:
-        logger.warning("BM25 index not available -- returning no results")
+async def retrieve_bm25(query: str, top_k: int = 20, user_id: Optional[str] = None) -> List[dict]:
+    """Tokenize query and score documents with BM25, filtered by user."""
+    # Get user-specific BM25 index
+    user_bm25 = await ingestion.get_user_bm25(user_id)
+    if not user_bm25 or not user_bm25["index"]:
+        logger.warning("BM25 index not available for user %s -- returning no results", user_id)
         return []
 
+    index = user_bm25["index"]
+    corpus = user_bm25["corpus"]
+
     tokens = query.lower().split()
-    scores = ingestion.bm25_index.get_scores(tokens)
+    scores = index.get_scores(tokens)
 
     scored_indices = sorted(
         range(len(scores)), key=lambda i: scores[i], reverse=True
@@ -144,13 +163,13 @@ def retrieve_bm25(query: str, top_k: int = 20) -> List[dict]:
     for idx in scored_indices:
         if scores[idx] <= 0:
             continue
-        entry = ingestion.bm25_corpus[idx].copy()
+        entry = corpus[idx].copy()
         meta = entry.pop("metadata", {})
         entry.update(meta)
         entry["bm25_score"] = float(scores[idx])
         chunks.append(_normalise_chunk(entry))
 
-    logger.info("BM25 search returned %d chunks for query", len(chunks))
+    logger.info("BM25 search returned %d chunks for query (user_id=%s)", len(chunks), user_id)
     return chunks
 
 
@@ -162,10 +181,11 @@ async def retrieve_hybrid_rerank(
     top_k_initial: int = 20,
     top_k_final: int = 5,
     filters: Optional[dict] = None,
+    user_id: Optional[str] = None,
 ) -> List[dict]:
     """Run vector + BM25 in parallel, fuse with RRF, then cross-encoder rerank."""
-    vector_task = retrieve_basic_vector(query, top_k=top_k_initial, filters=filters)
-    bm25_task = asyncio.to_thread(retrieve_bm25, query, top_k_initial)
+    vector_task = retrieve_basic_vector(query, top_k=top_k_initial, filters=filters, user_id=user_id)
+    bm25_task = retrieve_bm25(query, top_k_initial, user_id=user_id)
 
     vector_results, bm25_results = await asyncio.gather(vector_task, bm25_task)
 
@@ -192,12 +212,15 @@ async def retrieve_hybrid_rerank(
 # Strategy 4 -- Multi-Query
 # ---------------------------------------------------------------------------
 async def retrieve_multi_query(
-    query: str, top_k: int = 5, llm: Any = None
+    query: str, 
+    top_k: int = 5, 
+    llm: Any = None,
+    user_id: Optional[str] = None
 ) -> List[dict]:
     """Generate query variants via LLM, retrieve for each, merge with RRF."""
     if llm is None:
         logger.warning("No LLM provided for multi-query; falling back to hybrid_rerank")
-        return await retrieve_hybrid_rerank(query, top_k_final=top_k)
+        return await retrieve_hybrid_rerank(query, top_k_final=top_k, user_id=user_id)
 
     prompt = (
         "Generate 4 different phrasings of this question that might retrieve "
@@ -227,8 +250,8 @@ async def retrieve_multi_query(
 
     tasks = []
     for q in all_queries:
-        tasks.append(retrieve_basic_vector(q, top_k=20))
-        tasks.append(asyncio.to_thread(retrieve_bm25, q, 20))
+        tasks.append(retrieve_basic_vector(q, top_k=20, user_id=user_id))
+        tasks.append(retrieve_bm25(q, 20, user_id=user_id))
 
     results = await asyncio.gather(*tasks)
 
@@ -252,14 +275,17 @@ async def retrieve_multi_query(
 # Strategy 5 -- Section Based
 # ---------------------------------------------------------------------------
 async def retrieve_section_based(
-    query: str, top_k: int = 5, filters: Optional[dict] = None
+    query: str, 
+    top_k: int = 5, 
+    filters: Optional[dict] = None,
+    user_id: Optional[str] = None
 ) -> List[dict]:
     """Retrieve only section-based chunks from ChromaDB."""
     section_filter = {"strategy": "section_based"}
     if filters:
         section_filter = {"$and": [section_filter, filters]}
 
-    results = await retrieve_basic_vector(query, top_k=top_k, filters=section_filter)
+    results = await retrieve_basic_vector(query, top_k=top_k, filters=section_filter, user_id=user_id)
     logger.info("Section-based retrieval returned %d chunks", len(results))
     return results
 
@@ -271,6 +297,7 @@ async def retrieve_context_aware(
     query: str,
     conversation_history: Optional[List[dict]] = None,
     top_k: int = 5,
+    user_id: Optional[str] = None
 ) -> List[dict]:
     """Enrich query with conversation history and run hybrid_rerank."""
     history_summary = ""
@@ -289,7 +316,7 @@ async def retrieve_context_aware(
         enriched_query = query
 
     logger.info("Context-aware retrieval with enriched query (%d chars)", len(enriched_query))
-    return await retrieve_hybrid_rerank(enriched_query, top_k_final=top_k)
+    return await retrieve_hybrid_rerank(enriched_query, top_k_final=top_k, user_id=user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -303,38 +330,39 @@ async def retrieve(
     filters: Optional[dict] = None,
     conversation_history: Optional[List[dict]] = None,
     llm: Any = None,
+    user_id: Optional[str] = None,
 ) -> List[dict]:
     """Route to the correct retrieval strategy and return normalised chunks."""
-    logger.info("Retrieve called with strategy='%s', top_k_initial=%d, top_k_final=%d",
-                strategy, top_k_initial, top_k_final)
+    logger.info("Retrieve called with strategy='%s', top_k_initial=%d, top_k_final=%d, user_id=%s",
+                strategy, top_k_initial, top_k_final, user_id)
 
     if strategy == "basic_vector":
-        return await retrieve_basic_vector(query, top_k=top_k_final, filters=filters)
+        return await retrieve_basic_vector(query, top_k=top_k_final, filters=filters, user_id=user_id)
 
     elif strategy == "hybrid_rerank":
         return await retrieve_hybrid_rerank(
-            query, top_k_initial=top_k_initial, top_k_final=top_k_final, filters=filters
+            query, top_k_initial=top_k_initial, top_k_final=top_k_final, filters=filters, user_id=user_id
         )
 
     elif strategy == "multi_query":
-        return await retrieve_multi_query(query, top_k=top_k_final, llm=llm)
+        return await retrieve_multi_query(query, top_k=top_k_final, llm=llm, user_id=user_id)
 
     elif strategy == "section_based":
-        return await retrieve_section_based(query, top_k=top_k_final, filters=filters)
+        return await retrieve_section_based(query, top_k=top_k_final, filters=filters, user_id=user_id)
 
     elif strategy == "context_aware":
         return await retrieve_context_aware(
-            query, conversation_history=conversation_history, top_k=top_k_final
+            query, conversation_history=conversation_history, top_k=top_k_final, user_id=user_id
         )
 
     elif strategy == "fallback":
         logger.info("Fallback strategy: broadening retrieval to top_k_initial=30")
         return await retrieve_hybrid_rerank(
-            query, top_k_initial=30, top_k_final=top_k_final, filters=filters
+            query, top_k_initial=30, top_k_final=top_k_final, filters=filters, user_id=user_id
         )
 
     else:
         logger.warning("Unknown strategy '%s', defaulting to hybrid_rerank", strategy)
         return await retrieve_hybrid_rerank(
-            query, top_k_initial=top_k_initial, top_k_final=top_k_final, filters=filters
+            query, top_k_initial=top_k_initial, top_k_final=top_k_final, filters=filters, user_id=user_id
         )

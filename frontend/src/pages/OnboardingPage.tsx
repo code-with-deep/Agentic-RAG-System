@@ -18,6 +18,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
   const { user } = useAuth();
+  const { uploadDocument } = useStore();
   const navigate = useNavigate();
 
   const handleNext = () => {
@@ -25,12 +26,24 @@ export default function OnboardingPage() {
     else navigate('/dashboard');
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
+    // Create a dummy file for the onboarding step since there's no file input in the mock UI
+    // In a real production app, we'd have a file input here, but for this walkthrough
+    // we'll use a sample blob to show the API integration works.
+    const blob = new Blob(["Sample onboarding document content"], { type: "text/plain" });
+    const file = new File([blob], "welcome_guide.txt", { type: "text/plain" });
+
     setIsUploading(true);
-    setTimeout(() => {
+    try {
+      await uploadDocument(file, ['Onboarding']);
       setIsUploading(false);
       handleNext();
-    }, 2000);
+    } catch (error) {
+      console.error("Onboarding upload failed", error);
+      setIsUploading(false);
+      // Still proceed to next step for demo purposes but log error
+      handleNext();
+    }
   };
 
   return (

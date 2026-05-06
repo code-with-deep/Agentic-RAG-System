@@ -27,6 +27,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document as LCDocument
 from rank_bm25 import BM25Okapi
 
+from app.services.llm_client import llm
 from app.config import settings
 
 logger = logging.getLogger("agentic_rag.ingestion")
@@ -61,49 +62,36 @@ def get_chroma_collection():
         logger.info("ChromaDB collection 'agentic_rag_chunks' ready")
     return _chroma_collection
 
-# BM25 index persistence path (next to chroma data)
-_bm25_path = Path(settings.chroma_db_path) / "bm25_index.pkl"
-_bm25_corpus_path = Path(settings.chroma_db_path) / "bm25_corpus.pkl"
+# BM25 per-user cache to avoid rebuilding every time
+_user_bm25_cache: Dict[str, Dict[str, Any]] = {}
 
-bm25_index: Optional[BM25Okapi] = None
-bm25_corpus: List[Dict[str, Any]] = []
+async def get_user_bm25(user_id: Optional[str]) -> Dict[str, Any]:
+    """
+    Get or build the BM25 index and corpus for a specific user.
+    If user_id is None, returns an empty index.
+    """
+    if not user_id:
+        return {"index": None, "corpus": []}
 
+    # Check cache first
+    if user_id in _user_bm25_cache:
+        return _user_bm25_cache[user_id]
 
-def _load_bm25_from_disk() -> None:
-    """Load persisted BM25 index and corpus from disk if available."""
-    global bm25_index, bm25_corpus
-    if _bm25_path.exists() and _bm25_corpus_path.exists():
-        with open(_bm25_path, "rb") as f:
-            bm25_index = pickle.load(f)
-        with open(_bm25_corpus_path, "rb") as f:
-            bm25_corpus = pickle.load(f)
-        logger.info("BM25 index loaded from disk (%d documents)", len(bm25_corpus))
-    else:
-        logger.info("No existing BM25 index found on disk")
-
-
-def _save_bm25_to_disk() -> None:
-    """Persist BM25 index and corpus to disk."""
-    os.makedirs(_bm25_path.parent, exist_ok=True)
-    with open(_bm25_path, "wb") as f:
-        pickle.dump(bm25_index, f)
-    with open(_bm25_corpus_path, "wb") as f:
-        pickle.dump(bm25_corpus, f)
-    logger.info("BM25 index saved to disk (%d documents)", len(bm25_corpus))
-
-
-def _rebuild_bm25_from_chroma() -> None:
-    """Rebuild BM25 index from all chunks currently in ChromaDB."""
-    global bm25_index, bm25_corpus
     collection = get_chroma_collection()
-    total = collection.count()
-    if total == 0:
-        bm25_index = None
-        bm25_corpus = []
-        _save_bm25_to_disk()
-        return
+    
+    # Filter ChromaDB by user_id
+    kwargs = {
+        "where": {"user_id": user_id},
+        "include": ["documents", "metadatas"]
+    }
+    
+    # Note: collection.get() doesn't support pagination easily in older versions, 
+    # but for a standard RAG system with few thousand chunks per user it's fine.
+    all_data = await asyncio.to_thread(collection.get, **kwargs)
+    
+    if not all_data["ids"]:
+        return {"index": None, "corpus": []}
 
-    all_data = collection.get(include=["documents", "metadatas"])
     tokenized = []
     corpus_items: List[Dict[str, Any]] = []
     for idx, (doc_text, meta, cid) in enumerate(
@@ -113,14 +101,20 @@ def _rebuild_bm25_from_chroma() -> None:
         tokenized.append(tokens)
         corpus_items.append({"chunk_id": cid, "text": doc_text, "metadata": meta})
 
-    bm25_index = BM25Okapi(tokenized)
-    bm25_corpus = corpus_items
-    _save_bm25_to_disk()
+    index = BM25Okapi(tokenized)
+    result = {"index": index, "corpus": corpus_items}
+    
+    # Update cache (limited to last 10 users to save memory)
+    if len(_user_bm25_cache) > 10:
+        _user_bm25_cache.clear()
+    _user_bm25_cache[user_id] = result
+    
+    return result
 
-
-# We do not load bm25 from disk on import anymore, to save memory.
-# It will be loaded on demand or explicitly in startup.
-# _load_bm25_from_disk()
+def clear_user_bm25_cache(user_id: str):
+    """Clear the cached BM25 index for a user after new ingestion."""
+    if user_id in _user_bm25_cache:
+        del _user_bm25_cache[user_id]
 
 
 # ---------------------------------------------------------------------------
@@ -363,7 +357,7 @@ def _flatten_metadata(meta: dict) -> dict:
     return flat
 
 
-def _store_chunks_in_chroma(chunks: List[dict]) -> None:
+def _store_chunks_in_chroma(chunks: List[dict], user_id: str) -> None:
     """Batch-add chunks to the ChromaDB collection."""
     if not chunks:
         return
@@ -377,6 +371,7 @@ def _store_chunks_in_chroma(chunks: List[dict]) -> None:
         metadatas = []
         for c in batch:
             meta = {k: v for k, v in c.items() if k not in ("text",)}
+            meta["user_id"] = user_id  # Add user_id to metadata for isolation
             metadatas.append(_flatten_metadata(meta))
 
         get_chroma_collection().add(
@@ -390,6 +385,55 @@ def _store_chunks_in_chroma(chunks: List[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# LLM Enrichment (GROQ Integration)
+# ---------------------------------------------------------------------------
+async def generate_document_enrichment(text: str, filename: str) -> Dict[str, Any]:
+    """Use GROQ/LLM to generate a summary and high-quality tags for the document."""
+    prompt = f"""You are an AI document analyst. Analyze the following document snippet and provide:
+1. A concise 2-3 sentence summary of the document's main topic and purpose.
+2. A list of 3-5 high-quality keywords/tags.
+
+Filename: {filename}
+Document Snippet:
+{text[:4000]}
+
+Respond with ONLY a valid JSON object.
+Format:
+{{
+  "summary": "the summary here",
+  "tags": ["tag1", "tag2", "tag3"]
+}}"""
+    
+    try:
+        response = await llm.ainvoke(prompt)
+        content = response.content if hasattr(response, "content") else str(response)
+        
+        # Clean potential markdown
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.lower().startswith("json"):
+                content = content[4:]
+            content = content.strip()
+            
+        data = json.loads(content)
+        tags = data.get("tags", [])
+        if not isinstance(tags, list):
+            tags = [str(tags)] if tags else []
+            
+        return {
+            "summary": data.get("summary", "No summary generated."),
+            "tags": tags
+        }
+    except Exception as e:
+        logger.error("Failed to generate document enrichment: %s", e)
+        return {
+            "summary": "Summary generation failed.",
+            "tags": []
+        }
+
+
+# ---------------------------------------------------------------------------
 # Main Ingestion Function
 # ---------------------------------------------------------------------------
 async def ingest_document(
@@ -398,6 +442,7 @@ async def ingest_document(
     filename: str,
     tags: List[str],
     db,
+    user_id: str,
 ) -> dict:
     """Full ingestion pipeline: load -> chunk (4 strategies) -> store -> index."""
     doc_id = str(uuid.uuid4())
@@ -407,6 +452,13 @@ async def ingest_document(
     raw_docs = await asyncio.to_thread(load_document, file_path, file_type)
     total_pages = len(raw_docs)
     file_size = os.path.getsize(file_path)
+
+    # STEP 1.5 -- Generate AI Summary & Tags (GROQ Integration)
+    full_text_preview = "\n".join([d.page_content for d in raw_docs[:5]]) # Use first 5 pages for context
+    enrichment = await generate_document_enrichment(full_text_preview, filename)
+    
+    # Merge user tags with AI tags
+    all_tags = list(set(tags + enrichment["tags"]))
 
     # STEP 2 -- Run all 4 chunking strategies in parallel
     recursive_task = asyncio.to_thread(chunk_recursive, raw_docs, doc_id)
@@ -429,30 +481,40 @@ async def ingest_document(
     total_chunks = len(all_chunks)
 
     logger.info(
-        "Chunking complete for '%s': %d total chunks %s",
-        filename, total_chunks, chunk_counts,
+        "Chunking complete for '%s': %d total chunks",
+        filename, total_chunks,
     )
 
-    # STEP 3 -- Store all chunks in ChromaDB
-    await asyncio.to_thread(_store_chunks_in_chroma, all_chunks)
+    # STEP 3 -- Store in ChromaDB
+    await asyncio.to_thread(_store_chunks_in_chroma, recursive_chunks, user_id)
+    await asyncio.to_thread(_store_chunks_in_chroma, parent_child_chunks, user_id)
+    await asyncio.to_thread(_store_chunks_in_chroma, section_chunks, user_id)
+    await asyncio.to_thread(_store_chunks_in_chroma, semantic_chunks, user_id)
 
-    # STEP 4 -- Rebuild BM25 index from all ChromaDB data
-    await asyncio.to_thread(_rebuild_bm25_from_chroma)
-
-    # STEP 5 -- Save document record to SQLite
+    # STEP 4 -- Save to SQLite
     from app.models.database import Document as DBDocument
 
-    doc_record = DBDocument(
+    db_doc = DBDocument(
         id=doc_id,
         filename=filename,
         file_type=file_type,
         total_pages=total_pages,
         file_size=file_size,
-        tags=tags,
-        chunk_counts=chunk_counts,
+        tags=all_tags,
+        summary=enrichment["summary"],
+        user_id=user_id,
+        chunk_counts={
+            "recursive": len(recursive_chunks),
+            "parent_child": len(parent_child_chunks),
+            "section_based": len(section_chunks),
+            "semantic": len(semantic_chunks),
+        },
     )
-    db.add(doc_record)
+    db.add(db_doc)
     await db.flush()
+
+    # Clear BM25 cache for this user since data changed
+    clear_user_bm25_cache(user_id)
 
     logger.info("Ingestion complete for '%s' (doc_id=%s, %d chunks)", filename, doc_id, total_chunks)
 
@@ -468,11 +530,16 @@ async def ingest_document(
 # ---------------------------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------------------------
-def get_all_chunks(filters: Optional[dict] = None) -> List[dict]:
-    """Query ChromaDB with optional metadata filters."""
-    kwargs: Dict[str, Any] = {"include": ["documents", "metadatas", "embeddings"]}
+def get_all_chunks(user_id: str, filters: Optional[dict] = None) -> List[dict]:
+    """Query ChromaDB with optional metadata filters, scoped to user."""
+    chroma_filters = {"user_id": user_id}
     if filters:
-        kwargs["where"] = filters
+        chroma_filters = {"$and": [chroma_filters, filters]}
+        
+    kwargs: Dict[str, Any] = {
+        "include": ["documents", "metadatas", "embeddings"],
+        "where": chroma_filters
+    }
 
     collection = get_chroma_collection()
     total = collection.count()
@@ -495,17 +562,20 @@ def get_all_chunks(filters: Optional[dict] = None) -> List[dict]:
     return chunks
 
 
-def delete_document_chunks(doc_id: str) -> int:
-    """Delete all chunks belonging to a document and rebuild BM25."""
+def delete_document_chunks(doc_id: str, user_id: str) -> int:
+    """Delete all chunks belonging to a document and clear user BM25 cache."""
     collection = get_chroma_collection()
-    existing = collection.get(where={"doc_id": doc_id}, include=[])
+    existing = collection.get(where={"$and": [{"doc_id": doc_id}, {"user_id": user_id}]}, include=[])
     chunk_ids = existing["ids"]
 
     if not chunk_ids:
-        logger.info("No chunks found in ChromaDB for doc_id=%s", doc_id)
+        logger.info("No chunks found in ChromaDB for doc_id=%s (user_id=%s)", doc_id, user_id)
         return 0
 
     collection.delete(ids=chunk_ids)
+    
+    # Clear BM25 cache for this user
+    clear_user_bm25_cache(user_id)
     count = len(chunk_ids)
     logger.info("Deleted %d chunks from ChromaDB for doc_id=%s", count, doc_id)
 

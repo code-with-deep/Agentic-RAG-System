@@ -18,18 +18,18 @@ interface DocumentCardProps {
     };
     upload_date: string;
     tags?: string[];
+    summary?: string;
   };
   onQuery: (id: string) => void;
-  onView: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
-export function DocumentCard({ document, onQuery, onView, onDelete }: DocumentCardProps) {
+export function DocumentCard({ document, onQuery, onDelete }: DocumentCardProps) {
   const dateStr = new Date(document.upload_date).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric'
   });
 
-  // Calculate health score mock (normally from backend)
+  // Calculate health score based on chunk count
   const healthScore = Math.min(100, Math.max(40, Math.floor((document.total_chunks / 50) * 100)));
   const healthColor = healthScore > 80 ? 'text-semantic-success' : healthScore > 60 ? 'text-semantic-warning' : 'text-semantic-danger';
 
@@ -48,6 +48,12 @@ export function DocumentCard({ document, onQuery, onView, onDelete }: DocumentCa
         <h3 className="font-semibold text-text-primary text-base truncate mb-1" title={document.filename}>
           {document.filename}
         </h3>
+        
+        {document.summary && (
+          <p className="text-[11px] text-text-secondary line-clamp-2 mb-3 leading-relaxed italic">
+            "{document.summary}"
+          </p>
+        )}
         
         <div className="flex items-center text-xs text-text-muted mb-4 gap-3">
           <div className="flex items-center gap-1">
@@ -86,18 +92,13 @@ export function DocumentCard({ document, onQuery, onView, onDelete }: DocumentCa
         </div>
 
         {/* Action overlay on hover */}
-        <div className="absolute inset-0 bg-primary/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-2 p-4">
+        <div className="absolute inset-0 bg-primary/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-3 p-4">
           <Button variant="gradient" className="w-full" onClick={() => onQuery(document.id)}>
             <Search className="w-4 h-4 mr-2" /> Query Document
           </Button>
-          <div className="flex gap-2 w-full">
-            <Button variant="secondary" className="flex-1" onClick={() => onView(document.id)}>
-              View
-            </Button>
-            <Button variant="danger" size="icon" onClick={() => onDelete(document.id)}>
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
+          <Button variant="danger" className="w-full" onClick={() => onDelete(document.id)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Delete
+          </Button>
         </div>
       </CardContent>
     </Card>

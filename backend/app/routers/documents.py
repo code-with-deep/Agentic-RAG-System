@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import Document, get_db
 from app.services.ingestion import delete_document_chunks, ingest_document
+from app.dependencies import get_current_user
 
 logger = logging.getLogger("agentic_rag.routers.documents")
 
@@ -38,6 +39,7 @@ async def upload_document(
     file: UploadFile = File(...),
     tags: Optional[str] = Form(default=""),
     db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ):
     """Upload a document, run the full ingestion pipeline, and return chunk counts."""
     if not file.filename:
@@ -71,6 +73,7 @@ async def upload_document(
             filename=file.filename,
             tags=tag_list,
             db=db,
+            user_id=user_id,
         )
 
     finally:
@@ -93,9 +96,12 @@ async def upload_document(
 # GET /api/documents
 # ---------------------------------------------------------------------------
 @router.get("/documents")
-async def list_documents(db: AsyncSession = Depends(get_db)):
+async def list_documents(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
     """Return all ingested documents sorted by upload date (newest first)."""
-    stmt = select(Document).order_by(Document.upload_date.desc())
+    stmt = select(Document).where(Document.user_id == user_id).order_by(Document.upload_date.desc())
     result = await db.execute(stmt)
     documents = result.scalars().all()
 
@@ -109,6 +115,7 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
             "file_size": doc.file_size,
             "tags": doc.tags,
             "chunk_counts": doc.chunk_counts,
+            "summary": doc.summary,
         }
         for doc in documents
     ]
@@ -118,19 +125,23 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
 # DELETE /api/documents/{doc_id}
 # ---------------------------------------------------------------------------
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_document(
+    doc_id: str, 
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
     """Delete a document and all its chunks from ChromaDB and SQLite."""
-    stmt = select(Document).where(Document.id == doc_id)
+    stmt = select(Document).where(Document.id == doc_id, Document.user_id == user_id)
     result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
 
     if doc is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Document with id '{doc_id}' not found",
+            detail=f"Document with id '{doc_id}' not found for this user",
         )
 
-    chunks_deleted = delete_document_chunks(doc_id)
+    chunks_deleted = delete_document_chunks(doc_id, user_id)
 
     await db.delete(doc)
     await db.flush()

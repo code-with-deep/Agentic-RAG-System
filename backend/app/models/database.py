@@ -41,6 +41,8 @@ class Document(Base):
     file_size = Column(Integer, nullable=False, default=0)
     tags = Column(JSON, nullable=False, default=list)
     chunk_counts = Column(JSON, nullable=False, default=dict)
+    summary = Column(Text, nullable=True)
+    user_id = Column(String, nullable=True, index=True)
 
 
 class Query(Base):
@@ -58,6 +60,7 @@ class Query(Base):
     hallucination_score = Column(Float, nullable=True)
     iterations_count = Column(Integer, nullable=False, default=0)
     total_latency_ms = Column(Integer, nullable=True)
+    user_id = Column(String, nullable=True, index=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     claims = relationship("Claim", back_populates="query", cascade="all, delete-orphan")
     decision_traces = relationship("DecisionTrace", back_populates="query", cascade="all, delete-orphan")
@@ -108,6 +111,7 @@ class EvaluationResult(Base):
     __tablename__ = "evaluation_results"
     id = Column(String, primary_key=True, default=_new_uuid)
     job_id = Column(String, unique=True, nullable=False)
+    user_id = Column(String, nullable=True, index=True)
     dataset_path = Column(String, nullable=False)
     total_questions = Column(Integer, nullable=False)
     pass_rate = Column(Float, nullable=False)

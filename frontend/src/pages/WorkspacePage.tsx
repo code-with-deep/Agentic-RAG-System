@@ -1,40 +1,59 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { ConfidenceBadge } from '@/components/ui/ConfidenceBadge';
 import { AgentThinkingSteps } from '@/components/ui/AgentThinkingSteps';
-import { ClaimHighlight } from '@/components/ui/ClaimHighlight';
 import { TraceStepCard } from '@/components/ui/TraceStepCard';
 import { ChunkCard } from '@/components/ui/ChunkCard';
 import { cn } from '@/lib/utils';
-import { Paperclip, Send, ChevronRight, ChevronLeft, Trash2, Search, RotateCcw } from 'lucide-react';
+import { Send, ChevronRight, ChevronLeft, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { useStore } from '@/store/useStore';
+import ReactMarkdown from 'react-markdown';
 
 export default function WorkspacePage() {
   const [query, setQuery] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [activeTab, setActiveTab] = useState<'trace' | 'chunks'>('trace');
   
-  // Mock steps
-  const steps = [
-    { id: '1', label: 'Classified as FACTUAL', status: 'completed' as const, detail: 'Confidence: 94%' },
-    { id: '2', label: 'Routing to Hybrid+ReRank', status: 'completed' as const },
-    { id: '3', label: 'Retrieving chunks', status: 'active' as const, detail: '15/20 retrieved' },
-    { id: '4', label: 'Evaluating quality (CRAG)', status: 'pending' as const },
-    { id: '5', label: 'Checking for hallucinations', status: 'pending' as const },
-  ];
+  const {
+    runQuery,
+    agenticResult,
+    isLoadingAgentic,
+    queryError,
+    conversationHistory,
+    clearResults,
+  } = useStore();
 
-  const handleSend = () => {
+  // Build thinking steps from real trace data or show loading animation
+  const getThinkingSteps = () => {
+    if (agenticResult?.decision_trace) {
+      return agenticResult.decision_trace.map((step, i) => ({
+        id: String(i + 1),
+        label: `${step.step_name}: ${step.decision}`,
+        status: 'completed' as const,
+        detail: step.reasoning?.substring(0, 80),
+      }));
+    }
+    return [
+      { id: '1', label: 'Classifying query type...', status: 'active' as const },
+      { id: '2', label: 'Selecting retrieval strategy', status: 'pending' as const },
+      { id: '3', label: 'Retrieving chunks', status: 'pending' as const },
+      { id: '4', label: 'Evaluating quality (CRAG)', status: 'pending' as const },
+      { id: '5', label: 'Checking for hallucinations', status: 'pending' as const },
+    ];
+  };
+
+  const handleSend = async () => {
     if (!query.trim()) return;
-    setIsProcessing(true);
-    // Simulate API
-    setTimeout(() => {
-      setIsProcessing(false);
-      toast.success('Query processed successfully');
-    }, 3000);
+    const currentQuery = query;
+    setQuery('');
+    try {
+      await runQuery(currentQuery);
+    } catch {
+      toast.error('Failed to process query');
+    }
   };
 
   return (
@@ -44,31 +63,28 @@ export default function WorkspacePage() {
       <div className="hidden lg:flex flex-col w-64 bg-secondary border border-border-default rounded-xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-border-subtle flex items-center justify-between">
           <h2 className="font-semibold">History</h2>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-            <Search className="w-4 h-4" />
-          </Button>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          <div className="text-xs font-medium text-text-muted px-2 py-1 mb-1 mt-2">Today</div>
-          <div className="p-2 bg-brand-primary/10 border-l-2 border-brand-primary rounded-r-lg text-sm font-medium text-brand-primary mb-1 cursor-pointer">
-            <div className="truncate">What was Q3 revenue?</div>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="factual" className="text-[10px] px-1 py-0">F</Badge>
-              <div className="w-1.5 h-1.5 rounded-full bg-semantic-success" />
-            </div>
-          </div>
-          <div className="p-2 hover:bg-tertiary rounded-lg text-sm text-text-secondary mb-1 cursor-pointer transition-colors">
-            <div className="truncate">Compare all regions</div>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="analytical" className="text-[10px] px-1 py-0">A</Badge>
-              <div className="w-1.5 h-1.5 rounded-full bg-semantic-warning" />
-            </div>
-          </div>
-        </div>
-        <div className="p-3 border-t border-border-subtle">
-          <Button variant="ghost" className="w-full text-xs text-text-muted hover:text-semantic-danger transition-colors justify-start">
-            <Trash2 className="w-3.5 h-3.5 mr-2" /> Clear History
-          </Button>
+          {conversationHistory.length === 0 ? (
+            <div className="text-xs text-text-muted text-center py-8">No queries yet. Ask something!</div>
+          ) : (
+            <>
+              <div className="text-xs font-medium text-text-muted px-2 py-1 mb-1 mt-2">Recent</div>
+              {conversationHistory.map((item, i) => (
+                <div 
+                  key={i}
+                  className={cn(
+                    "p-2 rounded-lg text-sm mb-1 cursor-pointer transition-colors",
+                    i === conversationHistory.length - 1
+                      ? "bg-brand-primary/10 border-l-2 border-brand-primary text-brand-primary font-medium"
+                      : "text-text-secondary hover:bg-tertiary"
+                  )}
+                >
+                  <div className="truncate">{item.query}</div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -77,51 +93,77 @@ export default function WorkspacePage() {
         <div className="p-3 border-b border-border-subtle bg-tertiary flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-text-secondary">Querying:</span>
-            <select className="bg-primary border border-border-default rounded-md text-sm px-2 py-1 text-text-primary focus:outline-none focus:border-brand-primary">
-              <option>All Documents</option>
-              <option>Q3_Financial_Report.pdf</option>
-            </select>
+            <span className="text-sm font-medium text-text-primary">All Documents</span>
           </div>
+          {agenticResult && (
+            <Button variant="ghost" size="sm" className="text-xs" onClick={clearResults}>
+              New Query
+            </Button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-          {/* Answer Display */}
           <div className="w-full max-w-3xl mx-auto space-y-6">
-            {/* User Query */}
-            <div className="flex items-center gap-3 justify-end">
-              <div className="bg-brand-primary/10 border border-brand-primary/20 text-text-primary px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[80%]">
-                What was the Q3 revenue?
+            
+            {/* Show conversation history */}
+            {conversationHistory.map((item, i) => (
+              <div key={i} className="space-y-4">
+                {/* User Query */}
+                <div className="flex items-center gap-3 justify-end">
+                  <div className="bg-brand-primary/10 border border-brand-primary/20 text-text-primary px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[80%]">
+                    {item.query}
+                  </div>
+                </div>
+                {/* Agent Answer */}
+                <div className="flex flex-col gap-3 max-w-[90%]">
+                  <div className="bg-tertiary border border-border-subtle px-5 py-4 rounded-2xl rounded-tl-sm text-text-primary leading-relaxed shadow-sm prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{item.answer}</ReactMarkdown>
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
 
             {/* Agent Status (if processing) */}
-            {isProcessing ? (
+            {isLoadingAgentic && (
               <div className="w-full max-w-md">
-                <AgentThinkingSteps steps={steps} />
+                <AgentThinkingSteps steps={getThinkingSteps()} />
               </div>
-            ) : (
-              /* Agent Answer */
+            )}
+
+            {/* Current result details */}
+            {!isLoadingAgentic && agenticResult && (
               <div className="flex flex-col gap-3 max-w-[90%]">
                 <div className="flex items-center gap-3">
                   <div className="px-2.5 py-1 bg-secondary border border-border-default rounded-md text-xs font-semibold text-text-secondary flex items-center gap-1.5">
                     <Search className="w-3.5 h-3.5 text-brand-primary" />
-                    Hybrid + ReRank
+                    {agenticResult.strategy_used}
                   </div>
-                  <ConfidenceBadge percentage={94} size="sm" />
+                  <ConfidenceBadge percentage={agenticResult.confidence_breakdown?.confidence_percentage || 0} size="sm" />
+                  <Badge variant={agenticResult.query_type as any} className="uppercase text-[10px] px-1.5 py-0">
+                    {agenticResult.query_type}
+                  </Badge>
                 </div>
-                
-                <div className="bg-tertiary border border-border-subtle px-5 py-4 rounded-2xl rounded-tl-sm text-text-primary leading-relaxed shadow-sm">
-                  Based on the document, <ClaimHighlight text="the total revenue for Q3 2024 was $42.5 million" status="SUPPORTED" confidence={0.96} evidence="Found in Q3_Financial_Report.pdf on page 12." />, which represents a <ClaimHighlight text="14% year-over-year growth" status="SUPPORTED" confidence={0.92} evidence="Matched exact claim in financial overview section." /> compared to Q3 2023.
-                </div>
+              </div>
+            )}
 
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <Button variant="secondary" size="sm" className="text-xs py-1 h-7 rounded-full bg-primary">
-                    Compare this to industry average <ChevronRight className="w-3 h-3 ml-1" />
-                  </Button>
-                  <Button variant="secondary" size="sm" className="text-xs py-1 h-7 rounded-full bg-primary">
-                    What about Q4 results? <ChevronRight className="w-3 h-3 ml-1" />
-                  </Button>
+            {/* Error */}
+            {queryError && (
+              <div className="bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger p-4 rounded-xl">
+                <p className="text-sm font-medium">Query failed</p>
+                <p className="text-xs mt-1">{queryError}</p>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!isLoadingAgentic && !agenticResult && conversationHistory.length === 0 && !queryError && (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 bg-tertiary rounded-full flex items-center justify-center mb-4 border border-border-default">
+                  <Search className="w-8 h-8 text-text-muted" />
                 </div>
+                <h3 className="text-lg font-semibold text-text-primary mb-2">Ask anything about your documents</h3>
+                <p className="text-sm text-text-muted max-w-md">
+                  Upload documents in the Documents page, then ask complex questions. The agentic pipeline will classify, retrieve, verify, and answer.
+                </p>
               </div>
             )}
           </div>
@@ -131,7 +173,7 @@ export default function WorkspacePage() {
           <div className="max-w-3xl mx-auto relative group">
             {/* Live classification badge */}
             <AnimatePresence>
-              {query.length > 5 && !isProcessing && (
+              {query.length > 5 && !isLoadingAgentic && (
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -139,9 +181,8 @@ export default function WorkspacePage() {
                   className="absolute -top-10 left-0 bg-primary border border-border-default text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm"
                 >
                   <Search className="w-3 h-3 text-brand-primary" />
-                  <span className="text-text-muted">Looks like</span>
-                  <span className="font-semibold text-text-primary">FACTUAL</span>
-                  <span className="text-text-muted">→ Hybrid+ReRank</span>
+                  <span className="text-text-muted">Processing with</span>
+                  <span className="font-semibold text-text-primary">Agentic RAG</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -160,19 +201,15 @@ export default function WorkspacePage() {
                 }}
               />
               <div className="flex items-center justify-between p-2 pt-0">
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-text-muted">
-                    <Paperclip className="w-4 h-4" />
-                  </Button>
-                </div>
+                <div />
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-text-muted hidden sm:inline-block">Cmd+Enter to send</span>
+                  <span className="text-xs text-text-muted hidden sm:inline-block">Enter to send</span>
                   <Button 
                     variant="gradient" 
                     size="sm" 
                     className="h-8 px-3 rounded-lg"
                     onClick={handleSend}
-                    disabled={!query.trim() || isProcessing}
+                    disabled={!query.trim() || isLoadingAgentic}
                   >
                     <Send className="w-4 h-4" />
                   </Button>
@@ -204,7 +241,7 @@ export default function WorkspacePage() {
                   onClick={() => setActiveTab('chunks')}
                   className={cn("px-3 py-1 text-xs font-medium rounded-md transition-colors", activeTab === 'chunks' ? "bg-tertiary text-text-primary shadow-sm" : "text-text-muted")}
                 >
-                  Chunks (3)
+                  Chunks ({agenticResult?.retrieved_chunks?.length || 0})
                 </button>
               </div>
               <Button variant="ghost" size="icon" className="h-7 w-7 text-text-muted" onClick={() => setShowRightPanel(false)}>
@@ -215,15 +252,39 @@ export default function WorkspacePage() {
             <div className="flex-1 overflow-y-auto p-4">
               {activeTab === 'trace' && (
                 <div className="space-y-1 relative">
-                  <div className="absolute left-[11px] top-4 bottom-4 w-px bg-border-strong" />
-                  <TraceStepCard step={{ step_number: 1, step_name: 'ROUTER', decision: 'Classified as FACTUAL', reasoning: 'Question asks for a specific numerical value (revenue) in a specific timeframe (Q3 2024)', time_taken_ms: 120 }} expanded />
-                  <TraceStepCard step={{ step_number: 2, step_name: 'RETRIEVAL', decision: 'Hybrid + ReRank', reasoning: 'Best strategy for precise factual lookups', time_taken_ms: 450 }} />
-                  <TraceStepCard step={{ step_number: 3, step_name: 'CRAG EVALUATION', decision: 'Chunks are CORRECT', reasoning: 'Chunks contain revenue numbers for Q3', time_taken_ms: 320 }} />
+                  {agenticResult?.decision_trace && agenticResult.decision_trace.length > 0 ? (
+                    <>
+                      <div className="absolute left-[11px] top-4 bottom-4 w-px bg-border-strong" />
+                      {agenticResult.decision_trace.map((step, i) => (
+                        <TraceStepCard 
+                          key={i} 
+                          step={step} 
+                          expanded={i === 0} 
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    <div className="text-sm text-text-muted text-center py-8">
+                      Run a query to see the agent's decision trace.
+                    </div>
+                  )}
                 </div>
               )}
               {activeTab === 'chunks' && (
                 <div className="space-y-3">
-                  <ChunkCard chunk={{ text: 'The total revenue for Q3 2024 reached $42.5 million, exceeding expectations.', source: 'Q3_Report.pdf', page: 12, score: 0.92, strategy: 'hybrid_rerank' }} classification="CORRECT" />
+                  {agenticResult?.retrieved_chunks && agenticResult.retrieved_chunks.length > 0 ? (
+                    agenticResult.retrieved_chunks.map((chunk, i) => (
+                      <ChunkCard 
+                        key={i} 
+                        chunk={chunk} 
+                        classification={chunk.crag_classification} 
+                      />
+                    ))
+                  ) : (
+                    <div className="text-sm text-text-muted text-center py-8">
+                      Run a query to see retrieved chunks.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

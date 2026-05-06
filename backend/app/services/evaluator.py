@@ -202,7 +202,7 @@ async def evaluate_single(
     }
 
 
-async def run_batch_evaluation(eval_dataset_path: str, db=None) -> Dict[str, Any]:
+async def run_batch_evaluation(eval_dataset_path: str, db=None, user_id: str = None) -> Dict[str, Any]:
     """Run the complete batch evaluation on the dataset."""
     logger.info("Starting batch evaluation using dataset: %s", eval_dataset_path)
     
@@ -224,8 +224,8 @@ async def run_batch_evaluation(eval_dataset_path: str, db=None) -> Dict[str, Any
         logger.info("Evaluating question %d/%d: %s", i, total_questions, question[:50])
         
         try:
-            agentic_result = await agent_orchestrator.run(question, db=db)
-            simple_result = await agent_orchestrator.run_simple(question, db=db)
+            agentic_result = await agent_orchestrator.run(question, db=db, user_id=user_id)
+            simple_result = await agent_orchestrator.run_simple(question, db=db, user_id=user_id)
             
             eval_result = await evaluate_single(
                 question=question,
@@ -284,6 +284,7 @@ async def run_batch_evaluation(eval_dataset_path: str, db=None) -> Dict[str, Any
         try:
             db_eval = EvaluationResult(
                 job_id=job_id,
+                user_id=user_id,
                 dataset_path=eval_dataset_path,
                 total_questions=len(per_question_results),
                 pass_rate=pass_rate,

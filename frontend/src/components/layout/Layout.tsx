@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { Brain, MessageSquare, Folder, Scale, BarChart2, Settings, Menu, X, Bell, Search, Sun, Moon, LogOut } from 'lucide-react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Brain, MessageSquare, Folder, Scale, BarChart2, Settings, Menu, X, Search, LogOut } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '../ui/Button';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CommandPalette } from '../ui/CommandPalette';
 
 export function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: <BarChart2 className="w-5 h-5" /> },
@@ -19,6 +22,11 @@ export function Layout() {
     { name: 'Evaluation', path: '/evaluation', icon: <BarChart2 className="w-5 h-5" /> },
     { name: 'Settings', path: '/settings', icon: <Settings className="w-5 h-5" /> },
   ];
+
+  const handleLogout = () => {
+    logout();
+    navigate('/auth', { replace: true });
+  };
 
   const SidebarContent = () => (
     <>
@@ -81,23 +89,15 @@ export function Layout() {
           <p className="text-[10px] text-text-muted mt-2">Free plan limit: 10 queries/day</p>
         </div>
         
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="gradient" className="w-full text-xs" onClick={logout}>
-            <LogOut className="w-4 h-4 mr-2" /> Logout
-          </Button>
-          <button 
-            onClick={() => setDarkMode(!darkMode)}
-            className="ml-2 p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-secondary transition-colors"
-          >
-            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-        </div>
+        <Button variant="gradient" className="w-full text-xs" onClick={handleLogout}>
+          <LogOut className="w-4 h-4 mr-2" /> Logout
+        </Button>
       </div>
     </>
   );
 
   return (
-    <div className={cn("min-h-screen flex bg-primary text-text-primary font-sans", darkMode ? "dark" : "")}>
+    <div className="min-h-screen flex bg-primary text-text-primary font-sans dark">
       
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 fixed inset-y-0 left-0 bg-primary border-r border-border-default z-40">
@@ -150,16 +150,14 @@ export function Layout() {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-secondary border border-border-default rounded-md text-sm text-text-muted cursor-text w-64 transition-colors hover:border-border-strong">
+            <div 
+              onClick={() => setCommandPaletteOpen(true)}
+              className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-secondary border border-border-default rounded-md text-sm text-text-muted cursor-pointer w-64 transition-colors hover:border-border-strong"
+            >
               <Search className="w-4 h-4" />
               <span>Search...</span>
               <kbd className="ml-auto text-[10px] bg-tertiary px-1.5 py-0.5 rounded border border-border-subtle font-mono">Cmd+K</kbd>
             </div>
-            
-            <button className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-secondary transition-colors">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-primary ring-2 ring-primary" />
-            </button>
           </div>
         </header>
 
@@ -170,11 +168,7 @@ export function Layout() {
           </div>
         </main>
       </div>
-      <CommandPalette />
+      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
     </div>
   );
 }
-
-// Ensure framer-motion is imported in the same file since we use motion in SidebarContent
-import { motion, AnimatePresence } from 'framer-motion';
-import { CommandPalette } from '../ui/CommandPalette';

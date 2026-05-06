@@ -4,9 +4,20 @@ import { useNavigate } from 'react-router-dom';
 import { Search, FileText, Settings, BarChart2, MessageSquare, Scale, Calculator, Moon, Sun, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+interface CommandPaletteProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function CommandPalette({ open: externalOpen, onOpenChange }: CommandPaletteProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const navigate = useNavigate();
+
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = (value: boolean) => {
+    setInternalOpen(value);
+    onOpenChange?.(value);
+  };
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {

@@ -1,10 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Brain, FileText, ChevronRight, PlayCircle, ShieldAlert, Zap, Search, Eye, Activity } from 'lucide-react';
+import { Brain, FileText, ChevronRight, ShieldAlert, Zap, Search, Eye, Activity } from 'lucide-react';
 import { motion, useScroll, useTransform } from 'framer-motion';
+import { useAuth } from '@/components/auth/AuthContext';
 
 export default function LandingPage() {
+  const { isAuthenticated } = useAuth();
+
+  // Redirect authenticated users to dashboard
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
   const { scrollY } = useScroll();
   const y = useTransform(scrollY, [0, 500], [0, 100]);
   const [navScrolled, setNavScrolled] = useState(false);
@@ -95,9 +102,6 @@ export default function LandingPage() {
                 Start for Free <ChevronRight className="w-5 h-5 ml-1" />
               </Button>
             </Link>
-            <Button variant="ghost" size="lg" className="w-full sm:w-auto text-base">
-              <PlayCircle className="w-5 h-5 mr-2" /> Watch Demo
-            </Button>
           </motion.div>
 
           <motion.div 

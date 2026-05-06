@@ -1,7 +1,6 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
-import { BarChart2, Activity, ShieldAlert, Cpu, Download, ArrowUpRight } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { BarChart2, Activity, ShieldAlert, Cpu } from 'lucide-react';
 import { StatCard } from '../components/ui/StatCard';
 
 export default function EvaluationPage() {
@@ -19,9 +18,6 @@ export default function EvaluationPage() {
           <h1 className="text-2xl font-bold tracking-tight">Ragas Benchmarks</h1>
           <p className="text-sm text-text-secondary">System-wide evaluation metrics based on the Ragas framework.</p>
         </div>
-        <Button variant="secondary">
-          <Download className="w-4 h-4 mr-2" /> Export Report
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

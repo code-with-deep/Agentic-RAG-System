@@ -18,6 +18,7 @@ from sqlalchemy.future import select
 from app.models.database import EvaluationResult, get_db
 from app.services import evaluator, hallucination_detector
 from app.models.schemas import EvaluationRequest, BatchEvaluationRequest
+from app.dependencies import get_current_user
 
 logger = logging.getLogger("agentic_rag.routers.evaluation")
 
@@ -27,10 +28,10 @@ router = APIRouter(tags=["evaluation"])
 # ---------------------------------------------------------------------------
 # Background Task
 # ---------------------------------------------------------------------------
-async def background_evaluate_batch(dataset_path: str, db: AsyncSession):
-    """Run batch evaluation in the background."""
+async def background_evaluate_batch(dataset_path: str, db: AsyncSession, user_id: str):
+    """Run batch evaluation in the background, associated with a user."""
     try:
-        await evaluator.run_batch_evaluation(dataset_path, db=db)
+        await evaluator.run_batch_evaluation(dataset_path, db=db, user_id=user_id)
     except Exception as exc:
         logger.error("Background evaluation failed: %s", exc)
 
@@ -39,7 +40,10 @@ async def background_evaluate_batch(dataset_path: str, db: AsyncSession):
 # Endpoints
 # ---------------------------------------------------------------------------
 @router.post("/evaluate/hallucination")
-async def evaluate_hallucination_endpoint(request: EvaluationRequest):
+async def evaluate_hallucination_endpoint(
+    request: EvaluationRequest,
+    user_id: str = Depends(get_current_user),
+):
     """Test the hallucination detection service on arbitrary text and context."""
     if not request.text.strip() or not request.context.strip():
         raise HTTPException(status_code=400, detail="Text and context must not be empty.")
@@ -49,7 +53,8 @@ async def evaluate_hallucination_endpoint(request: EvaluationRequest):
         "text": request.context, 
         "source": "eval_input",
         "page_number": 1, 
-        "strategy": "manual"
+        "strategy": "manual",
+        "user_id": user_id
     }]
     
     result = await hallucination_detector.detect(request.text, mock_chunks)
@@ -67,7 +72,8 @@ async def evaluate_hallucination_endpoint(request: EvaluationRequest):
 async def evaluate_batch_endpoint(
     request: BatchEvaluationRequest, 
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ):
     """Trigger a batch evaluation using the provided dataset."""
     dataset_path = request.dataset_path or "app/data/eval_dataset.json"
@@ -88,7 +94,7 @@ async def evaluate_batch_endpoint(
     job_id = "eval_" + str(int(datetime.utcnow().timestamp()))
     
     # Run in background
-    background_tasks.add_task(background_evaluate_batch, dataset_path, db)
+    background_tasks.add_task(background_evaluate_batch, dataset_path, db, user_id)
     
     return {
         "message": "Evaluation started",
@@ -98,16 +104,19 @@ async def evaluate_batch_endpoint(
 
 
 @router.get("/evaluate/results")
-async def get_evaluation_results(db: AsyncSession = Depends(get_db)):
-    """Get the most recent batch evaluation result."""
-    stmt = select(EvaluationResult).order_by(desc(EvaluationResult.evaluated_at)).limit(1)
+async def get_evaluation_results(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
+    """Get the most recent batch evaluation result for the user."""
+    stmt = select(EvaluationResult).where(EvaluationResult.user_id == user_id).order_by(desc(EvaluationResult.evaluated_at)).limit(1)
     result = await db.execute(stmt)
     eval_record = result.scalar_one_or_none()
     
     if not eval_record:
         raise HTTPException(
             status_code=404, 
-            detail="No evaluation has been run yet. Call POST /api/evaluate/batch first."
+            detail="No evaluation has been run yet for this user. Call POST /api/evaluate/batch first."
         )
         
     return {
@@ -139,9 +148,12 @@ async def get_evaluation_results(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/evaluate/results/history")
-async def get_evaluation_history(db: AsyncSession = Depends(get_db)):
-    """Get a summary of all past batch evaluations."""
-    stmt = select(EvaluationResult).order_by(desc(EvaluationResult.evaluated_at))
+async def get_evaluation_history(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
+    """Get a summary of all past batch evaluations for the user."""
+    stmt = select(EvaluationResult).where(EvaluationResult.user_id == user_id).order_by(desc(EvaluationResult.evaluated_at))
     result = await db.execute(stmt)
     eval_records = result.scalars().all()
     

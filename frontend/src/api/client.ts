@@ -18,9 +18,22 @@ const client = axios.create({
   },
 });
 
-// Request interceptor for logging in development
+// Request interceptor for logging and auth headers
 client.interceptors.request.use(
   (config) => {
+    // Inject User Email for session isolation
+    const userData = localStorage.getItem("docmind_user");
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        if (user && user.email) {
+          config.headers["X-User-Email"] = user.email;
+        }
+      } catch (e) {
+        console.error("Failed to parse user data for header injection", e);
+      }
+    }
+
     if (import.meta.env.DEV) {
       console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config.data || config.params);
     }
@@ -49,8 +62,8 @@ client.interceptors.response.use(
 export async function uploadDocument(file: File, tags: string[]): Promise<Document> {
   const formData = new FormData();
   formData.append("file", file);
-  tags.forEach((tag) => formData.append("tags", tag));
-  const response = await client.post<Document>("/documents", formData, {
+  formData.append("tags", tags.join(","));
+  const response = await client.post<Document>("/documents/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return response.data;

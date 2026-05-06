@@ -1,37 +1,48 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent } from '@/components/ui/Card';
 import { ConfidenceBadge } from '@/components/ui/ConfidenceBadge';
 import { AgentThinkingSteps } from '@/components/ui/AgentThinkingSteps';
 import { ClaimHighlight } from '@/components/ui/ClaimHighlight';
-import { Scale, Zap, Cpu, ArrowRight, ShieldCheck, Search, Activity, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Scale, Zap, Cpu, ShieldCheck, Search, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import ReactMarkdown from 'react-markdown';
+import { useStore } from '@/store/useStore';
+import { toast } from 'sonner';
+import { Input } from '@/components/ui/Input';
 
 export default function ComparePage() {
-  const [query, setQuery] = useState('Compare the Q3 revenue between North America and Europe');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [hasResults, setHasResults] = useState(false);
+  const [query, setQuery] = useState('');
   const [activeView, setActiveView] = useState<'side-by-side' | 'diff'>('side-by-side');
 
-  // Mock answers
-  const simpleAnswer = `Based on the document, the Q3 revenue for North America was $24.5 million. The Q3 revenue for Europe was $18.0 million. This means North America had higher revenue than Europe.`;
-  
-  const agenticAnswer = `Based on the financial reports, the Q3 2024 revenue for North America was **$24.5 million** (a 12% YoY increase), while Europe reported **$18.0 million** (an 8% YoY increase). 
+  const {
+    runComparison,
+    agenticResult,
+    simpleResult,
+    isLoadingAgentic,
+    isLoadingSimple,
+    queryError,
+  } = useStore();
 
-North America outperformed Europe by **$6.5 million** in absolute terms.`;
+  const isProcessing = isLoadingAgentic || isLoadingSimple;
+  const hasResults = !!(agenticResult && simpleResult);
 
-  const handleCompare = () => {
-    setIsProcessing(true);
-    setHasResults(false);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setHasResults(true);
-    }, 2500);
+  const handleCompare = async () => {
+    if (!query.trim()) {
+      toast.error('Please enter a query to compare');
+      return;
+    }
+    try {
+      await runComparison(query);
+    } catch {
+      toast.error('Comparison failed');
+    }
   };
+
+  const simpleAnswer = simpleResult?.answer || '';
+  const agenticAnswer = agenticResult?.final_answer || '';
 
   return (
     <div className="space-y-6">
@@ -50,8 +61,11 @@ North America outperformed Europe by **$6.5 million** in absolute terms.`;
               <Input 
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter a complex query to compare..."
+                placeholder="Enter a query to compare pipelines..."
                 className="h-12 text-base"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCompare();
+                }}
               />
             </div>
             <Button 
@@ -65,6 +79,14 @@ North America outperformed Europe by **$6.5 million** in absolute terms.`;
           </div>
         </CardContent>
       </Card>
+
+      {/* Error */}
+      {queryError && (
+        <div className="bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger p-4 rounded-xl">
+          <p className="text-sm font-medium">Comparison failed</p>
+          <p className="text-xs mt-1">{queryError}</p>
+        </div>
+      )}
 
       {/* Results Area */}
       <AnimatePresence>
@@ -98,8 +120,8 @@ North America outperformed Europe by **$6.5 million** in absolute terms.`;
                   <h3 className="font-semibold text-text-primary">Agentic RAG Pipeline</h3>
                 </div>
                 <AgentThinkingSteps steps={[
-                  { id: '1', label: 'Classified as ANALYTICAL', status: 'completed' },
-                  { id: '2', label: 'Routing to Multi-Step Retrieval', status: 'active', detail: 'Step 1 of 2' },
+                  { id: '1', label: 'Classifying query type...', status: 'active' },
+                  { id: '2', label: 'Selecting retrieval strategy', status: 'pending' },
                   { id: '3', label: 'CRAG chunk evaluation', status: 'pending' },
                   { id: '4', label: 'Synthesizing final answer', status: 'pending' }
                 ]} />
@@ -149,7 +171,7 @@ North America outperformed Europe by **$6.5 million** in absolute terms.`;
                   <div className="p-4 bg-tertiary border-t border-border-subtle grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-text-muted block mb-1">Latency</span>
-                      <span className="font-mono text-text-primary">0.8s</span>
+                      <span className="font-mono text-text-primary">{simpleResult ? `${(simpleResult.latency_ms / 1000).toFixed(1)}s` : '-'}</span>
                     </div>
                     <div>
                       <span className="text-text-muted block mb-1">Strategy</span>
@@ -167,27 +189,25 @@ North America outperformed Europe by **$6.5 million** in absolute terms.`;
                       <Cpu className="w-5 h-5 text-brand-primary" />
                       <h3 className="font-semibold text-text-primary">Agentic RAG</h3>
                     </div>
-                    <ConfidenceBadge percentage={92} />
+                    <ConfidenceBadge percentage={agenticResult?.confidence_breakdown?.confidence_percentage || 0} />
                   </div>
-                  <div className="p-6 flex-1 relative z-10">
-                    <p className="leading-relaxed text-text-primary">
-                      Based on the financial reports, the Q3 2024 revenue for North America was <ClaimHighlight text="$24.5 million" status="SUPPORTED" confidence={0.95} evidence="Matched table data exactly." /> (a <ClaimHighlight text="12% YoY increase" status="SUPPORTED" confidence={0.88} evidence="Calculated from Q3 2023 base." />), while Europe reported <ClaimHighlight text="$18.0 million" status="SUPPORTED" confidence={0.94} evidence="Found in regional breakdown section." /> (an 8% YoY increase). 
-                      <br/><br/>
-                      North America outperformed Europe by <ClaimHighlight text="$6.5 million" status="SUPPORTED" confidence={0.98} evidence="Verified calculation: 24.5 - 18.0 = 6.5" /> in absolute terms.
-                    </p>
+                  <div className="p-6 flex-1 relative z-10 prose prose-invert prose-p:text-text-primary prose-p:leading-relaxed max-w-none">
+                    <ReactMarkdown>{agenticAnswer}</ReactMarkdown>
                   </div>
                   <div className="p-4 bg-brand-primary/5 border-t border-brand-primary/20 grid grid-cols-3 gap-4 text-sm relative z-10">
                     <div>
                       <span className="text-text-muted block mb-1">Latency</span>
-                      <span className="font-mono text-semantic-warning">2.4s</span>
+                      <span className="font-mono text-semantic-warning">{agenticResult ? `${(agenticResult.total_latency_ms / 1000).toFixed(1)}s` : '-'}</span>
                     </div>
                     <div>
                       <span className="text-text-muted block mb-1">Strategy</span>
-                      <span className="font-mono text-brand-primary">Multi-Step</span>
+                      <span className="font-mono text-brand-primary">{agenticResult?.strategy_used || '-'}</span>
                     </div>
                     <div>
                       <span className="text-text-muted block mb-1">Verified</span>
-                      <span className="font-mono text-semantic-success flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 4 claims</span>
+                      <span className="font-mono text-semantic-success flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> {agenticResult?.claims?.length || 0} claims
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -239,10 +259,12 @@ North America outperformed Europe by **$6.5 million** in absolute terms.`;
                 <div>
                   <h4 className="font-semibold text-brand-primary mb-2">Agentic Advantage</h4>
                   <ul className="space-y-1.5 text-sm text-text-secondary list-disc list-inside">
-                    <li>The agent identified the query as analytical and routed it to a Multi-Step retrieval chain.</li>
-                    <li>It performed mathematical operations (calculating the $6.5M difference) which simple RAG cannot do natively.</li>
-                    <li>It verified 4 distinct factual claims against the source documents before presenting the answer.</li>
-                    <li>While slower (2.4s vs 0.8s), the answer provides significantly higher utility and mathematically verified correctness.</li>
+                    <li>The agentic pipeline classified the query as <strong>{agenticResult?.query_type}</strong> and used <strong>{agenticResult?.strategy_used}</strong> strategy.</li>
+                    <li>It verified <strong>{agenticResult?.claims?.length || 0}</strong> factual claims against source documents.</li>
+                    <li>Confidence score: <strong>{agenticResult?.confidence_breakdown?.confidence_percentage?.toFixed(1)}%</strong> ({agenticResult?.confidence_breakdown?.confidence_level})</li>
+                    {agenticResult && simpleResult && (
+                      <li>Latency trade-off: {(agenticResult.total_latency_ms / 1000).toFixed(1)}s (agentic) vs {(simpleResult.latency_ms / 1000).toFixed(1)}s (simple) — the additional time is spent on verification and refinement.</li>
+                    )}
                   </ul>
                 </div>
               </div>

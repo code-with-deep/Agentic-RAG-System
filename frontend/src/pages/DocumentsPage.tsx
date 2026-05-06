@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { DocumentCard } from '@/components/ui/DocumentCard';
-import { UploadCloud, Search, Filter, Plus } from 'lucide-react';
+import { UploadCloud, Search, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { toast } from 'sonner';
@@ -45,10 +45,6 @@ export default function DocumentsPage() {
   const handleQuery = (id: string) => {
     navigate('/workspace');
     toast.info('Document selected for querying');
-  };
-
-  const handleView = (id: string) => {
-    toast.info('Document viewer will be available in the next update');
   };
 
   const handleDelete = async (id: string) => {
@@ -101,9 +97,6 @@ export default function DocumentsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Button variant="secondary">
-          <Filter className="w-4 h-4 mr-2" /> Filter
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -122,7 +115,6 @@ export default function DocumentsPage() {
               <DocumentCard 
                 document={doc as any}
                 onQuery={handleQuery}
-                onView={handleView}
                 onDelete={handleDelete}
               />
             </motion.div>

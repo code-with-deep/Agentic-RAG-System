@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Brain, FileText } from 'lucide-react';
@@ -12,8 +12,13 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect already-authenticated users away from the auth page
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const getPasswordStrength = () => {
     if (password.length === 0) return 0;
@@ -45,7 +50,7 @@ export default function AuthPage() {
         joined_date: new Date().toISOString(),
         plan: 'free',
       });
-      navigate(isLogin ? '/dashboard' : '/onboarding');
+      navigate(isLogin ? '/dashboard' : '/onboarding', { replace: true });
     }, 1000);
   };
 
@@ -275,42 +280,17 @@ export default function AuthPage() {
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="mt-8 flex items-center">
-            <div className="flex-grow" style={{ borderTop: '1px solid #e0e0e0' }} />
-            <span
-              className="px-4 text-xs uppercase tracking-wider"
-              style={{ color: '#999999' }}
-            >
-              Or continue with
-            </span>
-            <div className="flex-grow" style={{ borderTop: '1px solid #e0e0e0' }} />
-          </div>
-
-          {/* Social buttons */}
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            {['Google', 'GitHub'].map((provider) => (
-              <button
-                key={provider}
-                type="button"
-                className="w-full h-10 rounded-lg text-sm font-medium transition-all"
-                style={{
-                  background: '#ffffff',
-                  color: '#1a1a1a',
-                  border: '1px solid #c8c8c8',
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background = '#f4f4f5';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#999999';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background = '#ffffff';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#c8c8c8';
-                }}
-              >
-                {provider}
-              </button>
-            ))}
+          {/* Security Notice */}
+          <div className="mt-8 p-4 rounded-lg flex items-start gap-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            <div className="mt-0.5" style={{ color: '#6366f1' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#0f172a' }}>Secure Authentication</p>
+              <p className="text-xs mt-1 leading-relaxed" style={{ color: '#64748b' }}>
+                Your connection is encrypted. Social logins (Google & GitHub) are currently disabled for security upgrades. Please use your email.
+              </p>
+            </div>
           </div>
 
           {/* Terms (signup only) */}

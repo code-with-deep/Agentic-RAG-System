@@ -239,6 +239,7 @@ async def run_crag(
     attempt: int = 1,
     conversation_history: Optional[List[dict]] = None,
     tracer: Optional[DecisionTracer] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Run the Corrective RAG pipeline with retrieval, evaluation, and retry logic."""
     if tracer is None:
@@ -262,6 +263,7 @@ async def run_crag(
         top_k_final=settings.top_k_final,
         conversation_history=conversation_history,
         llm=llm,
+        user_id=user_id,
     )
 
     # STEP 2 -- Handle empty retrieval
@@ -300,7 +302,7 @@ async def run_crag(
             output_data={"new_strategy": new_strategy},
             alternatives_considered=[new_strategy],
         )
-        return await run_crag(query, new_strategy, attempt + 1, conversation_history, tracer)
+        return await run_crag(query, new_strategy, attempt + 1, conversation_history, tracer, user_id)
 
     # STEP 3 -- Evaluate chunks
     evaluation = await evaluate_chunks(query, chunks)
@@ -368,7 +370,7 @@ async def run_crag(
             output_data={"refined_query": refined_query, "new_strategy": new_strategy},
             alternatives_considered=[new_strategy],
         )
-        return await run_crag(refined_query, new_strategy, attempt + 1, conversation_history, tracer)
+        return await run_crag(refined_query, new_strategy, attempt + 1, conversation_history, tracer, user_id)
 
     # STEP 6 -- FALLBACK
     if attempt >= settings.max_retrieval_retries:
@@ -397,4 +399,4 @@ async def run_crag(
         output_data={"new_strategy": new_strategy},
         alternatives_considered=[new_strategy],
     )
-    return await run_crag(query, new_strategy, attempt + 1, conversation_history, tracer)
+    return await run_crag(query, new_strategy, attempt + 1, conversation_history, tracer, user_id)

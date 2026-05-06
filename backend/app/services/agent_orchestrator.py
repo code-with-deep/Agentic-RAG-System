@@ -46,7 +46,8 @@ class AgentState:
 async def run(
     query: str, 
     conversation_history: Optional[List[dict]] = None, 
-    db=None
+    db=None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     state = AgentState()
     state.original_query = query
@@ -75,7 +76,8 @@ async def run(
             strategy=state.strategy_used,
             attempt=1,
             conversation_history=state.conversation_history,
-            tracer=state.tracer
+            tracer=state.tracer,
+            user_id=user_id
         )
         state.crag_result = crag_result
 
@@ -197,7 +199,8 @@ async def run(
                 fallback_level=state.fallback_level,
                 hallucination_score=state.hallucination_result.get("hallucination_score", 0.0),
                 iterations_count=state.iterations_count,
-                total_latency_ms=state.total_latency_ms
+                total_latency_ms=state.total_latency_ms,
+                user_id=user_id
             )
             db.add(db_query)
             
@@ -268,7 +271,7 @@ async def run(
 # ---------------------------------------------------------------------------
 # Simple RAG Baseline
 # ---------------------------------------------------------------------------
-async def run_simple(query: str, db=None) -> Dict[str, Any]:
+async def run_simple(query: str, db=None, user_id: Optional[str] = None) -> Dict[str, Any]:
     """Execute a basic RAG pipeline for baseline comparison."""
     from app.services.retrieval import retrieve
     from app.services.llm_client import llm
@@ -283,7 +286,8 @@ async def run_simple(query: str, db=None) -> Dict[str, Any]:
             strategy="hybrid_rerank", 
             top_k_initial=10, 
             top_k_final=5,
-            llm=llm
+            llm=llm,
+            user_id=user_id
         )
         
         # STEP 2: Generate answer directly from chunks
@@ -322,7 +326,8 @@ Instructions:
                 strategy_used="hybrid_rerank",
                 final_answer=generated_answer,
                 source_label="SIMPLE_RAG",
-                total_latency_ms=latency_ms
+                total_latency_ms=latency_ms,
+                user_id=user_id
             )
             db.add(db_query)
             await db.commit()

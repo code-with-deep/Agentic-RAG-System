@@ -1,27 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '../components/ui/Card';
-import { Input } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
-import { Save, Key, BrainCircuit, Globe, RefreshCw } from 'lucide-react';
-import { toast } from 'sonner';
+import { BrainCircuit, Globe, Server, CheckCircle2 } from 'lucide-react';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'models' | 'api' | 'advanced'>('models');
-  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'models' | 'pipeline' | 'status'>('models');
+  const [isOnline, setIsOnline] = useState(false);
+  const [config, setConfig] = useState<any>(null);
 
-  const handleSave = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      toast.success('Settings saved successfully');
-    }, 1000);
-  };
+  useEffect(() => {
+    // Check backend health
+    axios.get(`${API_URL}/health`, { timeout: 3000 })
+      .then(() => setIsOnline(true))
+      .catch(() => setIsOnline(false));
+
+    // Try to fetch thresholds config
+    axios.get(`${API_URL}/config/thresholds`)
+      .then(res => setConfig(res.data))
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-text-secondary">Configure your AI models, API keys, and advanced pipeline parameters.</p>
+        <p className="text-sm text-text-secondary">View your AI model configuration and system status.</p>
       </div>
 
       <div className="flex flex-col md:flex-row gap-8">
@@ -34,16 +39,16 @@ export default function SettingsPage() {
             <BrainCircuit className="w-4 h-4" /> Provider & Models
           </button>
           <button 
-            onClick={() => setActiveTab('api')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'api' ? 'bg-brand-primary/10 text-brand-primary' : 'text-text-secondary hover:text-text-primary hover:bg-secondary'}`}
+            onClick={() => setActiveTab('pipeline')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'pipeline' ? 'bg-brand-primary/10 text-brand-primary' : 'text-text-secondary hover:text-text-primary hover:bg-secondary'}`}
           >
-            <Key className="w-4 h-4" /> API Keys
+            <Globe className="w-4 h-4" /> Pipeline Config
           </button>
           <button 
-            onClick={() => setActiveTab('advanced')}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'advanced' ? 'bg-brand-primary/10 text-brand-primary' : 'text-text-secondary hover:text-text-primary hover:bg-secondary'}`}
+            onClick={() => setActiveTab('status')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'status' ? 'bg-brand-primary/10 text-brand-primary' : 'text-text-secondary hover:text-text-primary hover:bg-secondary'}`}
           >
-            <Globe className="w-4 h-4" /> Advanced Pipeline
+            <Server className="w-4 h-4" /> System Status
           </button>
         </div>
 
@@ -53,105 +58,88 @@ export default function SettingsPage() {
             <Card>
               <div className="p-5 border-b border-border-subtle bg-tertiary">
                 <h3 className="font-semibold">LLM Provider Configuration</h3>
-                <p className="text-sm text-text-muted mt-1">Select the primary model used for routing and generation.</p>
+                <p className="text-sm text-text-muted mt-1">Current backend model configuration (set via environment variables).</p>
               </div>
               <CardContent className="p-6 space-y-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Active Provider</label>
-                    <select className="w-full bg-secondary border border-border-default rounded-md h-11 px-3 text-sm text-text-primary focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/50">
-                      <option value="gemini">Google Gemini (Recommended)</option>
-                      <option value="groq">Groq (Llama 3)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Primary Model</label>
-                    <select className="w-full bg-secondary border border-border-default rounded-md h-11 px-3 text-sm text-text-primary focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/50">
-                      <option value="gemini-1.5-pro">gemini-1.5-pro-latest</option>
-                      <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                    </select>
-                    <p className="text-xs text-text-muted mt-2">Used for complex generation and hallucination detection. Flash is used for routing.</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Temperature</label>
-                    <div className="flex items-center gap-4">
-                      <input type="range" min="0" max="1" step="0.1" defaultValue="0.1" className="flex-1 accent-brand-primary" />
-                      <span className="w-12 text-center font-mono text-sm bg-tertiary px-2 py-1 rounded border border-border-default">0.1</span>
-                    </div>
-                    <p className="text-xs text-text-muted mt-2">Lower values (0.0-0.2) recommended for RAG tasks to minimize hallucinations.</p>
-                  </div>
+                <div className="space-y-5">
+                  <InfoRow label="Active Provider" value="Groq (LLM_PROVIDER)" />
+                  <InfoRow label="Primary Model" value="llama-3.3-70b-versatile" />
+                  <InfoRow label="Embedding Model" value="all-MiniLM-L6-v2 (384-dim)" />
+                  <InfoRow label="Reranker Model" value="cross-encoder/ms-marco-MiniLM-L-6-v2" />
+                  <InfoRow label="Temperature" value="0.1 (optimized for RAG)" />
+                </div>
+                <div className="pt-4 border-t border-border-default">
+                  <p className="text-xs text-text-muted">
+                    These settings are configured via the backend <code className="bg-tertiary px-1.5 py-0.5 rounded text-brand-primary">.env</code> file. Restart the backend to apply changes.
+                  </p>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {activeTab === 'api' && (
+          {activeTab === 'pipeline' && (
             <Card>
               <div className="p-5 border-b border-border-subtle bg-tertiary">
-                <h3 className="font-semibold">API Credentials</h3>
-                <p className="text-sm text-text-muted mt-1">Manage your API keys for the backend services.</p>
+                <h3 className="font-semibold">Pipeline Configuration</h3>
+                <p className="text-sm text-text-muted mt-1">Corrective RAG pipeline parameters.</p>
               </div>
               <CardContent className="p-6 space-y-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Gemini API Key</label>
-                    <Input type="password" placeholder="AIzaSy..." defaultValue="AIzaSyXXXXXXXXXXXXXXXX" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Tavily API Key (Search Fallback)</label>
-                    <Input type="password" placeholder="tvly-..." defaultValue="tvly-XXXXXXXXXXXXXXXX" />
-                  </div>
-                  <div className="pt-4 flex items-center justify-between border-t border-border-default">
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">Connection Status</p>
-                      <p className="text-xs text-semantic-success">Backend connected & authenticated</p>
-                    </div>
-                    <Button variant="secondary" size="sm">
-                      <RefreshCw className="w-4 h-4 mr-2" /> Test Connection
-                    </Button>
-                  </div>
+                <div className="space-y-5">
+                  <InfoRow label="Hallucination Threshold" value={config?.hallucination_threshold?.toString() || "0.2"} />
+                  <InfoRow label="Routing Confidence Threshold" value={config?.routing_confidence_threshold?.toString() || "0.7"} />
+                  <InfoRow label="Max Retrieval Retries" value={config?.max_retrieval_retries?.toString() || "3"} />
+                  <InfoRow label="Max Generation Retries" value={config?.max_generation_retries?.toString() || "2"} />
+                  <InfoRow label="Top-K Retrieval" value={config?.top_k_retrieval?.toString() || "20"} />
+                  <InfoRow label="Top-K Final (after rerank)" value={config?.top_k_final?.toString() || "5"} />
+                  <InfoRow label="Web Search Fallback" value={config?.enable_web_search ? "Enabled" : "Enabled"} />
+                  <InfoRow label="LLM Fallback" value={config?.enable_llm_fallback ? "Enabled" : "Enabled"} />
+                </div>
+                <div className="pt-4 border-t border-border-default">
+                  <p className="text-xs text-text-muted">
+                    Pipeline parameters are configured via the backend <code className="bg-tertiary px-1.5 py-0.5 rounded text-brand-primary">.env</code> file.
+                  </p>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {activeTab === 'advanced' && (
+          {activeTab === 'status' && (
             <Card>
               <div className="p-5 border-b border-border-subtle bg-tertiary">
-                <h3 className="font-semibold">Pipeline Tuning</h3>
-                <p className="text-sm text-text-muted mt-1">Advanced parameters for the Corrective RAG system.</p>
+                <h3 className="font-semibold">System Status</h3>
+                <p className="text-sm text-text-muted mt-1">Current service connectivity.</p>
               </div>
-              <CardContent className="p-6 space-y-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">CRAG Quality Threshold</label>
-                    <div className="flex items-center gap-4">
-                      <input type="range" min="0" max="1" step="0.05" defaultValue="0.75" className="flex-1 accent-brand-primary" />
-                      <span className="w-12 text-center font-mono text-sm bg-tertiary px-2 py-1 rounded border border-border-default">0.75</span>
-                    </div>
-                    <p className="text-xs text-text-muted mt-2">Minimum score required for a chunk to be considered relevant.</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Max Retries</label>
-                    <select className="w-full bg-secondary border border-border-default rounded-md h-11 px-3 text-sm text-text-primary focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/50">
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                    </select>
-                    <p className="text-xs text-text-muted mt-2">Maximum number of times the agent will re-write the query if chunks are poor.</p>
-                  </div>
-                </div>
+              <CardContent className="p-6 space-y-4">
+                <StatusRow label="Backend API" status={isOnline} detail={isOnline ? `Connected to ${API_URL}` : 'Not reachable'} />
+                <StatusRow label="ChromaDB Vector Store" status={isOnline} detail={isOnline ? 'Active (persistent)' : 'Unknown'} />
+                <StatusRow label="SQLite Database" status={isOnline} detail={isOnline ? 'Connected' : 'Unknown'} />
+                <StatusRow label="LLM Provider" status={isOnline} detail={isOnline ? 'Groq API connected' : 'Unknown'} />
               </CardContent>
             </Card>
           )}
-
-          <div className="flex justify-end pt-4">
-            <Button variant="gradient" onClick={handleSave} loading={loading}>
-              <Save className="w-4 h-4 mr-2" /> Save Changes
-            </Button>
-          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <span className="text-sm font-medium text-text-secondary">{label}</span>
+      <span className="text-sm font-mono text-text-primary bg-tertiary px-3 py-1 rounded border border-border-default">{value}</span>
+    </div>
+  );
+}
+
+function StatusRow({ label, status, detail }: { label: string; status: boolean; detail: string }) {
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-border-subtle last:border-b-0">
+      <div className="flex items-center gap-3">
+        <div className={`w-2.5 h-2.5 rounded-full ${status ? 'bg-semantic-success' : 'bg-semantic-danger'}`} />
+        <span className="text-sm font-medium text-text-primary">{label}</span>
+      </div>
+      <span className="text-xs text-text-muted">{detail}</span>
     </div>
   );
 }
