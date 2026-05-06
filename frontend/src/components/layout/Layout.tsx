@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { Brain, MessageSquare, Folder, Scale, BarChart2, Settings, Menu, X, Bell, Search, Sun, Moon } from 'lucide-react';
+import { Brain, MessageSquare, Folder, Scale, BarChart2, Settings, Menu, X, Bell, Search, Sun, Moon, LogOut } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '../ui/Button';
 
 export function Layout() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
@@ -81,9 +81,9 @@ export function Layout() {
           <p className="text-[10px] text-text-muted mt-2">Free plan limit: 10 queries/day</p>
         </div>
         
-        <div className="flex items-center justify-between">
-          <Button variant="gradient" className="w-full text-xs">
-            Upgrade to Pro
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="gradient" className="w-full text-xs" onClick={logout}>
+            <LogOut className="w-4 h-4 mr-2" /> Logout
           </Button>
           <button 
             onClick={() => setDarkMode(!darkMode)}

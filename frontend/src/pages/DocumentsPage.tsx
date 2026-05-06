@@ -1,63 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { DocumentCard } from '@/components/ui/DocumentCard';
 import { UploadCloud, Search, Filter, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useStore } from '@/store/useStore';
+import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 export default function DocumentsPage() {
   const [search, setSearch] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  
+  const { 
+    documents, 
+    isLoadingDocuments, 
+    isUploading, 
+    fetchDocuments, 
+    uploadDocument, 
+    deleteDocument 
+  } = useStore();
 
-  const mockDocuments = [
-    {
-      id: 'doc1',
-      filename: 'Q3_Financial_Report_Final.pdf',
-      file_type: 'pdf',
-      total_chunks: 245,
-      chunk_counts: { recursive: 100, parent_child: 80, semantic: 45, section_based: 20 },
-      upload_date: '2024-10-24T10:30:00Z',
-      tags: ['Finance', 'Q3', '2024']
-    },
-    {
-      id: 'doc2',
-      filename: 'Competitor_Analysis_2024.docx',
-      file_type: 'docx',
-      total_chunks: 128,
-      chunk_counts: { recursive: 50, parent_child: 30, semantic: 28, section_based: 20 },
-      upload_date: '2024-10-22T14:15:00Z',
-      tags: ['Strategy', 'Competitors']
-    },
-    {
-      id: 'doc3',
-      filename: 'Legal_Risk_Assessment.pdf',
-      file_type: 'pdf',
-      total_chunks: 56,
-      chunk_counts: { recursive: 20, parent_child: 20, semantic: 10, section_based: 6 },
-      upload_date: '2024-10-15T09:45:00Z',
-      tags: ['Legal', 'Risk']
-    },
-    {
-      id: 'doc4',
-      filename: 'Engineering_Architecture_v2.md',
-      file_type: 'md',
-      total_chunks: 89,
-      chunk_counts: { recursive: 40, parent_child: 29, semantic: 15, section_based: 5 },
-      upload_date: '2024-10-10T16:20:00Z',
-      tags: ['Engineering', 'Architecture']
+  useEffect(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        await uploadDocument(file, ['User Upload']);
+        toast.success('Document uploaded successfully');
+      } catch (error) {
+        toast.error('Failed to upload document');
+      }
     }
-  ];
+    // reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const handleQuery = (id: string) => {
-    console.log('Query doc', id);
+    navigate('/workspace');
+    toast.info('Document selected for querying');
   };
 
   const handleView = (id: string) => {
-    console.log('View doc', id);
+    toast.info('Document viewer will be available in the next update');
   };
 
-  const handleDelete = (id: string) => {
-    console.log('Delete doc', id);
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this document?")) {
+      try {
+        await deleteDocument(id);
+        toast.success('Document deleted successfully');
+      } catch (error) {
+        toast.error('Failed to delete document');
+      }
+    }
   };
+
+  const processedDocs = documents.map(doc => {
+    const total_chunks = doc.chunk_counts ? Object.values(doc.chunk_counts).reduce((a, b) => a + b, 0) : 0;
+    return { ...doc, id: doc.doc_id, total_chunks };
+  });
+
+  const filteredDocs = processedDocs.filter(doc => 
+    doc.filename.toLowerCase().includes(search.toLowerCase()) || 
+    doc.tags?.some(tag => tag.toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
@@ -66,7 +79,14 @@ export default function DocumentsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Document Library</h1>
           <p className="text-sm text-text-secondary">Manage your knowledge base and view chunking metrics.</p>
         </div>
-        <Button variant="gradient">
+        <input 
+          type="file" 
+          ref={fileInputRef}
+          className="hidden" 
+          onChange={handleFileChange}
+          accept=".pdf,.txt,.docx,.doc,.md,.markdown"
+        />
+        <Button variant="gradient" onClick={() => fileInputRef.current?.click()} loading={isUploading}>
           <UploadCloud className="w-4 h-4 mr-2" /> Upload Document
         </Button>
       </div>
@@ -87,27 +107,34 @@ export default function DocumentsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {mockDocuments.map((doc, i) => (
-          <motion.div
-            key={doc.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <DocumentCard 
-              document={doc}
-              onQuery={handleQuery}
-              onView={handleView}
-              onDelete={handleDelete}
-            />
-          </motion.div>
-        ))}
+        {isLoadingDocuments && documents.length === 0 ? (
+           <div className="col-span-full flex justify-center py-12">
+             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
+           </div>
+        ) : (
+          filteredDocs.map((doc, i) => (
+            <motion.div
+              key={doc.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+            >
+              <DocumentCard 
+                document={doc as any}
+                onQuery={handleQuery}
+                onView={handleView}
+                onDelete={handleDelete}
+              />
+            </motion.div>
+          ))
+        )}
         
         {/* Upload Placeholder Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: mockDocuments.length * 0.1 }}
+          transition={{ delay: filteredDocs.length * 0.05 }}
+          onClick={() => fileInputRef.current?.click()}
           className="border-2 border-dashed border-border-default rounded-xl bg-secondary/30 hover:bg-secondary/80 hover:border-brand-primary/50 transition-colors cursor-pointer flex flex-col items-center justify-center p-6 min-h-[260px] group"
         >
           <div className="w-12 h-12 rounded-full bg-tertiary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-sm">
