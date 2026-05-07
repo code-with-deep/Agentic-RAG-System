@@ -69,11 +69,26 @@ app.include_router(evaluation.router, prefix="/api")
 app.include_router(config_routes.router, prefix="/api")
 
 
-# ── Health Check ──────────────────────────────────────
+# ── Health Checks ─────────────────────────────────────
+@app.get("/")
+@app.get("/health")
 @app.get("/api/health", tags=["system"])
 async def health_check():
-    """Health check endpoint to verify the service is running."""
-    return {"status": "ok", "version": "1.0.0"}
+    """Comprehensive health check endpoint for Render and local use."""
+    return {
+        "status": "ok", 
+        "version": "1.0.0", 
+        "message": "Agentic RAG System is live",
+        "timestamp": os.environ.get("RENDER_EXTERNAL_URL", "local")
+    }
+
+# Root-level redirects/handlers for common scanned paths to avoid 404s during deployment
+@app.get("/documents")
+@app.get("/stats")
+async def root_path_fallback(request: Request):
+    """Handle common paths at root to satisfy scanners/health checks."""
+    logger.info("Root-level access to %s detected", request.url.path)
+    return {"message": f"Please use /api{request.url.path} for API access.", "status": "active"}
 
 
 # ── Global Exception Handler ─────────────────────────

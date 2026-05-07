@@ -579,5 +579,4 @@ def delete_document_chunks(doc_id: str, user_id: str) -> int:
     count = len(chunk_ids)
     logger.info("Deleted %d chunks from ChromaDB for doc_id=%s", count, doc_id)
 
-    _rebuild_bm25_from_chroma()
     return count
