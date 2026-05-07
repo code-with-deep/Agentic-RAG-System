@@ -17,6 +17,7 @@ import numpy as np
 from app.config import settings
 from app.services import ingestion
 from app.services.reranker import rerank_with_metadata
+from app.services.llm_client import parse_llm_json
 
 logger = logging.getLogger("agentic_rag.retrieval")
 
@@ -152,7 +153,8 @@ async def retrieve_bm25(query: str, top_k: int = 20, user_id: Optional[str] = No
     index = user_bm25["index"]
     corpus = user_bm25["corpus"]
 
-    tokens = query.lower().split()
+    import re
+    tokens = re.findall(r"\w+", query.lower())
     scores = index.get_scores(tokens)
 
     scored_indices = sorted(
@@ -232,13 +234,7 @@ async def retrieve_multi_query(
     try:
         llm_response = await asyncio.to_thread(llm.invoke, prompt)
         response_text = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
-        response_text = response_text.strip()
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-        variants = json.loads(response_text)
+        variants = parse_llm_json(response_text)
         if not isinstance(variants, list):
             variants = [query]
     except Exception as exc:

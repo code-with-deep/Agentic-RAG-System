@@ -17,7 +17,7 @@ from app.services.decision_tracer import (
     STEP_RETRIEVAL,
     DecisionTracer,
 )
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm, parse_llm_json
 from app.services.query_router import get_alternative_strategy, refine_query
 from app.services.retrieval import retrieve
 
@@ -91,17 +91,9 @@ async def evaluate_chunks(query: str, chunks: List[dict]) -> Dict[str, Any]:
     )
 
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
-        response_text = response_text.strip()
-
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.lower().startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        classifications = json.loads(response_text)
+        classifications = parse_llm_json(response_text)
         if not isinstance(classifications, list):
             raise ValueError("Expected JSON array")
 
@@ -132,18 +124,24 @@ async def evaluate_chunks(query: str, chunks: List[dict]) -> Dict[str, Any]:
         cid = chunk.get("chunk_id", "")
         cls_entry = classification_map.get(cid, {})
         classification = cls_entry.get("classification", "AMBIGUOUS")
-        chunk["crag_classification"] = classification
-        chunk["relevance_score"] = cls_entry.get("relevance_score", 0.5)
+        
+        # Create a new decorated chunk to avoid side-effects on original references
+        decorated_chunk = {
+            **chunk,
+            "crag_classification": classification,
+            "relevance_score": cls_entry.get("relevance_score", 0.5)
+        }
+        
         if classification == "CORRECT":
-            verified_chunks.append(chunk)
+            verified_chunks.append(decorated_chunk)
 
-    if correct_count > total * 0.5:
+    if correct_count > total * settings.crag_proceed_ratio:
         decision = "PROCEED"
         failed_reason = ""
     elif correct_count == 0 and ambiguous_count == 0:
         decision = "FALLBACK"
         failed_reason = "All chunks classified as INCORRECT"
-    elif incorrect_count > total * 0.5:
+    elif incorrect_count > total * settings.crag_fallback_ratio:
         decision = "FALLBACK"
         failed_reason = f"Majority of chunks irrelevant ({incorrect_count}/{total} INCORRECT)"
     elif ambiguous_count >= correct_count and ambiguous_count > incorrect_count:
@@ -201,14 +199,15 @@ async def refine_context(
         elif cls == "AMBIGUOUS":
             ambiguous_chunks.append(chunk)
 
-    refined_ambiguous: List[dict] = []
-    for chunk in ambiguous_chunks:
+    import asyncio
+    
+    async def _refine_single(chunk: dict) -> Optional[dict]:
         prompt = EXTRACTION_PROMPT.format(
             query=query,
             chunk_text=chunk.get("text", "")[:500],
         )
         try:
-            response = await llm.ainvoke(prompt)
+            response = await get_llm().ainvoke(prompt)
             extracted = response.content if hasattr(response, "content") else str(response)
             extracted = extracted.strip()
 
@@ -216,13 +215,22 @@ async def refine_context(
                 refined_chunk = chunk.copy()
                 refined_chunk["text"] = extracted
                 refined_chunk["refined"] = True
-                refined_ambiguous.append(refined_chunk)
                 logger.info("Refined AMBIGUOUS chunk %s: %d -> %d chars",
                             chunk.get("chunk_id", ""), len(chunk.get("text", "")), len(extracted))
+                return refined_chunk
             else:
                 logger.info("AMBIGUOUS chunk %s had no relevant content, dropping", chunk.get("chunk_id", ""))
+                return None
         except Exception as exc:
             logger.error("Failed to refine chunk %s: %s", chunk.get("chunk_id", ""), exc)
+            return None
+
+    # Fire all LLM requests in parallel using gather
+    tasks = [_refine_single(chunk) for chunk in ambiguous_chunks]
+    gather_results = await asyncio.gather(*tasks)
+    
+    # Filter out None results
+    refined_ambiguous = [r for r in gather_results if r is not None]
 
     result = correct_chunks + refined_ambiguous
     logger.info("Context refinement: %d correct + %d refined = %d total",
@@ -262,7 +270,7 @@ async def run_crag(
         top_k_initial=settings.top_k_retrieval,
         top_k_final=settings.top_k_final,
         conversation_history=conversation_history,
-        llm=llm,
+        llm=get_llm(),
         user_id=user_id,
     )
 

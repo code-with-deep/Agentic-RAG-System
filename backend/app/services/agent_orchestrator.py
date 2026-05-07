@@ -96,10 +96,10 @@ async def run(
             state.source_label = fallback_result["source_label"]
             state.fallback_level = fallback_result["fallback_level"]
             state.generated_answer = fallback_result["answer"]
-            # Skip to STEP 8 (confidence scoring with empty chunks)
+            
             
         else:
-            # STEP 4 -- Answer Generation
+            
             state.retrieved_chunks = crag_result.get("chunks", [])
             state.tracer.log(
                 step_name=STEP_GENERATION,
@@ -161,13 +161,16 @@ async def run(
                 "confidence_percentage": 30.0,
                 "confidence_level": "VERY_LOW",
                 "confidence_badge": "Very Low Confidence",
-                "disclaimer": "This answer is not from your documents",
+                "disclaimer": state.fallback_result.get("disclaimer", "This answer is not from your documents"),
                 "breakdown": {}
             }
             
     except Exception as exc:
         logger.error("Pipeline error for query %s: %s", state.query_id, exc, exc_info=True)
         # Ensure we return something gracefully
+        incident_id = uuid4().hex[:8]
+        logger.error("Incident %s: Pipeline error: %s", incident_id, exc, exc_info=True)
+        
         state.generated_answer = state.generated_answer or "I encountered an internal error processing your request."
         state.source_label = "ERROR"
         if not state.confidence_result or "final_score" not in state.confidence_result:
@@ -180,7 +183,7 @@ async def run(
                 "confidence_percentage": 0.0,
                 "confidence_level": "VERY_LOW",
                 "confidence_badge": "Error",
-                "disclaimer": f"Pipeline error: {str(exc)}",
+                "disclaimer": f"An internal error occurred (Incident: {incident_id}). Please contact support.",
                 "breakdown": {}
             }
 
@@ -224,12 +227,7 @@ async def run(
                 )
                 
             await state.tracer.save_to_db(state.query_id, db)
-            await db.commit()
-            
-        except Exception as exc:
-            logger.error("Database save failed for query %s: %s", state.query_id, exc)
-            if db:
-                await db.rollback()
+            # Transaction lifecycle (commit/rollback) is managed by the get_db dependency
 
     # Format chunks to match Pydantic schema strictly
     formatted_chunks = []
@@ -259,12 +257,12 @@ async def run(
         if not state.confidence_result:
             state.confidence_result = {}
             
-        for field in required_conf_fields:
-            if field not in state.confidence_result:
-                if field == "confidence_level":
-                    state.confidence_result[field] = "UNKNOWN"
+        for key in required_conf_fields:
+            if key not in state.confidence_result:
+                if key == "confidence_level":
+                    state.confidence_result[key] = "UNKNOWN"
                 else:
-                    state.confidence_result[field] = 0.0
+                    state.confidence_result[key] = 0.0
 
         # Build annotation map with safety
         annotations = []
@@ -327,7 +325,7 @@ async def run(
 async def run_simple(query: str, db=None, user_id: Optional[str] = None) -> Dict[str, Any]:
     """Execute a basic RAG pipeline for baseline comparison."""
     from app.services.retrieval import retrieve
-    from app.services.llm_client import llm
+    from app.services.llm_client import get_llm
     
     query_id = str(uuid4())
     start_time = datetime.now(timezone.utc)
@@ -358,7 +356,7 @@ Instructions:
 - Answer based ONLY on the provided context
 - If the context does not contain enough information, say so"""
 
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         generated_answer = response.content if hasattr(response, "content") else str(response)
         
     except Exception as exc:
@@ -383,16 +381,14 @@ Instructions:
                 user_id=user_id
             )
             db.add(db_query)
-            await db.commit()
-        except Exception as exc:
-            logger.error("Database save failed for simple query %s: %s", query_id, exc)
-            await db.rollback()
+            # Transaction lifecycle (commit/rollback) is managed by the get_db dependency
             
     return {
         "query_id": query_id,
         "query": query,
         "answer": generated_answer,
         "chunks_used": len(chunks),
+        "retrieved_chunks": chunks,
         "latency_ms": latency_ms,
         "source_label": "SIMPLE_RAG"
     }

@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from app.models.database import EvaluationResult
 from app.services import agent_orchestrator, hallucination_detector
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm
 
 logger = logging.getLogger("agentic_rag.evaluator")
 
@@ -94,7 +94,7 @@ async def score_faithfulness(answer: str, context: str) -> float:
         
     prompt = FAITHFULNESS_PROMPT.format(context=context, answer=answer)
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         text = response.content if hasattr(response, "content") else str(response)
         return _parse_score(text, 0.5)
     except Exception as exc:
@@ -105,7 +105,7 @@ async def score_faithfulness(answer: str, context: str) -> float:
 async def score_relevancy(question: str, answer: str) -> float:
     prompt = RELEVANCY_PROMPT.format(question=question, answer=answer)
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         text = response.content if hasattr(response, "content") else str(response)
         return _parse_score(text, 0.5)
     except Exception as exc:
@@ -116,7 +116,7 @@ async def score_relevancy(question: str, answer: str) -> float:
 async def score_accuracy(answer: str, reference_answer: str) -> float:
     prompt = ACCURACY_PROMPT.format(reference_answer=reference_answer, answer=answer)
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         text = response.content if hasattr(response, "content") else str(response)
         return _parse_score(text, 0.0)
     except Exception as exc:
@@ -233,7 +233,7 @@ async def run_batch_evaluation(eval_dataset_path: str, db=None, user_id: str = N
                 agentic_answer=agentic_result["final_answer"],
                 simple_answer=simple_result["answer"],
                 agentic_chunks=agentic_result.get("retrieved_chunks", []),
-                simple_chunks=simple_result.get("chunks_used", []), # Actually we don't have the simple chunks in the response
+                simple_chunks=simple_result.get("retrieved_chunks", []),
                 agentic_hallucination_score=agentic_result.get("hallucination_score", 0.0)
             )
             
@@ -276,7 +276,7 @@ async def run_batch_evaluation(eval_dataset_path: str, db=None, user_id: str = N
         f"and reduced hallucinations by {h_reduction*100:.1f}% compared to Simple RAG baseline."
     )
     
-    job_id = str(uuid4())
+    job_id = uuid4().hex
     evaluated_at = datetime.now(timezone.utc)
     
     # STEP 5 — Save to database

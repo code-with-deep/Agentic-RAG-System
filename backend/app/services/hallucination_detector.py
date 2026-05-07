@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from app.config import settings
 from app.services.decision_tracer import STEP_HALLUCINATION, DecisionTracer
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm, parse_llm_json
 
 logger = logging.getLogger("agentic_rag.hallucination_detector")
 
@@ -185,17 +185,9 @@ async def detect(
     # STEP 1 -- Claim Extraction
     extract_prompt = EXTRACTION_PROMPT.format(answer=answer)
     try:
-        response = await llm.ainvoke(extract_prompt)
+        response = await get_llm().ainvoke(extract_prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
-        response_text = response_text.strip()
-        
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.lower().startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-            
-        extracted_claims = json.loads(response_text)
+        extracted_claims = parse_llm_json(response_text)
         if not isinstance(extracted_claims, list):
             extracted_claims = []
             
@@ -232,17 +224,9 @@ async def detect(
     verify_prompt = VERIFICATION_PROMPT.format(context=context_text, claims_text=claims_text)
     
     try:
-        response = await llm.ainvoke(verify_prompt)
+        response = await get_llm().ainvoke(verify_prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
-        response_text = response_text.strip()
-        
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.lower().startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-            
-        verified_claims = json.loads(response_text)
+        verified_claims = parse_llm_json(response_text)
         if not isinstance(verified_claims, list):
             raise ValueError("Expected JSON array")
             
@@ -254,15 +238,19 @@ async def detect(
             vc = claim_map.get(cid, {})
             merged = {**ec, **vc}
             if "status" not in merged:
-                merged["status"] = "SUPPORTED"  # Default safe
+                merged["status"] = "NOT_SUPPORTED"
+                merged["evidence"] = "Verification failed"
+                merged["confidence"] = 0.0
             final_claims.append(merged)
+        summary_suffix = ""
             
     except Exception as exc:
-        logger.error("Claim verification failed: %s. Assuming all claims are SUPPORTED.", exc)
+        logger.error("Claim verification failed: %s. Defaulting to NOT_SUPPORTED for safety.", exc)
         final_claims = [
-            {**c, "status": "SUPPORTED", "evidence": "Verification failed", "confidence": 1.0}
+            {**c, "status": "NOT_SUPPORTED", "evidence": f"Verification failed: {str(exc)}", "confidence": 0.0}
             for c in extracted_claims
         ]
+        summary_suffix = " (Detection Failed)"
 
     # STEP 3 -- Calculate hallucination score
     total_claims = len(final_claims)
@@ -297,7 +285,7 @@ async def detect(
                 hallucination_score, settings.hallucination_threshold, regenerate)
 
     # STEP 5 -- Return
-    summary = f"{supported_count}/{total_claims} claims verified, {unsupported_total} unsupported."
+    summary = f"{supported_count}/{total_claims} claims verified, {unsupported_total} unsupported.{summary_suffix}"
     
     return {
         "claims": final_claims,

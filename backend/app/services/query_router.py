@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.config import settings
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm, parse_llm_json
 
 logger = logging.getLogger("agentic_rag.query_router")
 
@@ -60,17 +60,11 @@ async def classify_query(query: str) -> Dict[str, Any]:
     prompt = CLASSIFICATION_PROMPT.format(query=query)
 
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
         response_text = response_text.strip()
 
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.lower().startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        result = json.loads(response_text)
+        result = parse_llm_json(response_text)
 
         classification = {
             "query_type": result.get("type", "FACTUAL").upper(),
@@ -92,7 +86,7 @@ async def classify_query(query: str) -> Dict[str, Any]:
 
     try:
         strict_prompt = STRICT_CLASSIFICATION_PROMPT.format(query=query)
-        response = await llm.ainvoke(strict_prompt)
+        response = await get_llm().ainvoke(strict_prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
         response_text = response_text.strip()
 
@@ -177,7 +171,7 @@ async def refine_query(original_query: str, failed_reason: str) -> str:
     )
 
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         refined = response.content if hasattr(response, "content") else str(response)
         refined = refined.strip().strip('"').strip("'")
 

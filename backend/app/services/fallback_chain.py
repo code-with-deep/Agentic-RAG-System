@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from app.config import settings
 from app.services.decision_tracer import STEP_FALLBACK, DecisionTracer
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm
 
 logger = logging.getLogger("agentic_rag.fallback_chain")
 
@@ -49,12 +49,15 @@ async def search_web(query: str) -> Dict[str, Any]:
     # Try Tavily API first
     if hasattr(settings, "tavily_api_key") and settings.tavily_api_key:
         try:
+            import asyncio
             from tavily import TavilyClient
             client = TavilyClient(api_key=settings.tavily_api_key)
-            # Tavily is synchronous, but we can run it in a thread if needed.
-            # For simplicity per instructions, calling it directly here.
-            # Real-world: wrap in asyncio.to_thread
-            raw_results = client.search(query, max_results=5)
+            
+            # Tavily is synchronous; wrap in to_thread and enforce a 10s timeout
+            raw_results = await asyncio.wait_for(
+                asyncio.to_thread(client.search, query, max_results=5),
+                timeout=10.0
+            )
             
             results = []
             for r in raw_results.get("results", []):
@@ -73,9 +76,15 @@ async def search_web(query: str) -> Dict[str, Any]:
 
     # Try DuckDuckGo
     try:
+        import asyncio
         from duckduckgo_search import DDGS
         ddgs = DDGS()
-        raw_results = list(ddgs.text(query, max_results=5))
+        
+        # DuckDuckGo search is synchronous; wrap in to_thread and enforce a 10s timeout
+        raw_results = await asyncio.wait_for(
+            asyncio.to_thread(lambda: list(ddgs.text(query, max_results=5))),
+            timeout=10.0
+        )
         
         results = []
         for r in raw_results:
@@ -109,7 +118,7 @@ async def generate_from_web(query: str, web_results: List[dict]) -> str:
     prompt = WEB_GENERATION_PROMPT.format(query=query, formatted_results=formatted_results)
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         return response.content if hasattr(response, "content") else str(response)
     except Exception as exc:
         logger.error("LLM web generation failed: %s", exc)
@@ -128,7 +137,7 @@ async def generate_from_llm_knowledge(query: str) -> Optional[str]:
     prompt = LLM_KNOWLEDGE_PROMPT.format(query=query)
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         return response.content if hasattr(response, "content") else str(response)
     except Exception as exc:
         logger.error("LLM knowledge generation failed: %s", exc)
@@ -201,6 +210,7 @@ async def execute(
                 "answer": answer,
                 "source_label": "WEB_SEARCH",
                 "fallback_level": 2,
+                "disclaimer": "This answer was generated using web search and is not based on your uploaded documents.",
                 "web_results": web_res["results"],
                 "context_used": format_web_results(web_res["results"])
             }
@@ -226,16 +236,11 @@ async def execute(
                 output_data={"status": "success"}
             )
             
-        final_llm_answer = (
-            llm_answer + 
-            "\n\n⚠️ This answer is from general AI knowledge and NOT from your documents. "
-            "It may not be accurate for your specific context."
-        )
-        
         return {
-            "answer": final_llm_answer,
+            "answer": llm_answer,
             "source_label": "LLM_GENERAL_KNOWLEDGE",
             "fallback_level": 3,
+            "disclaimer": "This answer is from general AI knowledge and is not based on your uploaded documents.",
             "web_results": [],
             "context_used": ""
         }

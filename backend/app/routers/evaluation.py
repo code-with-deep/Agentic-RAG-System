@@ -1,39 +1,56 @@
-"""
-Agentic RAG System -- Evaluation Routes
-
-Endpoints for evaluating system performance, triggering batch runs,
-and retrieving evaluation statistics.
-"""
-
+import asyncio
+import json
 import logging
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.database import EvaluationResult, get_db
+from app.models.database import EvaluationResult, User, get_db, async_session_factory
 from app.services import evaluator, hallucination_detector
-from app.models.schemas import EvaluationRequest, BatchEvaluationRequest
+from app.models.schemas import EvaluationRequest as ClientEvalRequest
 from app.dependencies import get_current_user
 
 logger = logging.getLogger("agentic_rag.routers.evaluation")
 
 router = APIRouter(tags=["evaluation"])
 
+# Registry to track active background tasks
+RUNNING_TASKS: Dict[str, Any] = {}
+
+# Secure Registry of evaluation datasets
+ALLOWED_DATASETS = {
+    "default": Path("backend/app/data/eval_dataset.json"),
+    "sample": Path("backend/app/data/sample_eval.json"),
+}
 
 # ---------------------------------------------------------------------------
 # Background Task
 # ---------------------------------------------------------------------------
-async def background_evaluate_batch(dataset_path: str, db: AsyncSession, user_id: str):
-    """Run batch evaluation in the background, associated with a user."""
+async def background_evaluate_batch(job_id: str, dataset_path: str, user_id: str):
+    """Run batch evaluation with a dedicated session, independent of the request."""
+    logger.info("Task %s started for user %s", job_id, user_id)
+    RUNNING_TASKS[job_id] = {"status": "running", "started_at": datetime.now(timezone.utc)}
+    
     try:
-        await evaluator.run_batch_evaluation(dataset_path, db=db, user_id=user_id)
+        # Open a fresh session dedicated to this background task
+        async with async_session_factory() as db:
+            await evaluator.run_batch_evaluation(dataset_path, db=db, user_id=user_id)
+        RUNNING_TASKS[job_id]["status"] = "completed"
+        logger.info("Task %s completed successfully", job_id)
     except Exception as exc:
-        logger.error("Background evaluation failed: %s", exc)
+        RUNNING_TASKS[job_id]["status"] = "failed"
+        RUNNING_TASKS[job_id]["error"] = str(exc)
+        logger.error("Task %s failed: %s", job_id, exc)
+    finally:
+        # Optional: remove from registry after some time or on cleanup
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -41,11 +58,11 @@ async def background_evaluate_batch(dataset_path: str, db: AsyncSession, user_id
 # ---------------------------------------------------------------------------
 @router.post("/evaluate/hallucination")
 async def evaluate_hallucination_endpoint(
-    request: EvaluationRequest,
-    user_id: str = Depends(get_current_user),
+    request: ClientEvalRequest,
+    current_user: User = Depends(get_current_user),
 ):
     """Test the hallucination detection service on arbitrary text and context."""
-    if not request.text.strip() or not request.context.strip():
+    if not request.text or not request.context:
         raise HTTPException(status_code=400, detail="Text and context must not be empty.")
         
     mock_chunks = [{
@@ -54,7 +71,7 @@ async def evaluate_hallucination_endpoint(
         "source": "eval_input",
         "page_number": 1, 
         "strategy": "manual",
-        "user_id": user_id
+        "user_id": current_user.sub
     }]
     
     result = await hallucination_detector.detect(request.text, mock_chunks)
@@ -68,48 +85,63 @@ async def evaluate_hallucination_endpoint(
     }
 
 
-@router.post("/evaluate/batch")
-async def evaluate_batch_endpoint(
-    request: BatchEvaluationRequest, 
+class RunEvaluationRequest(BaseModel):
+    dataset_id: str = "default"
+    strategy: Optional[str] = "agentic"
+
+
+@router.post("/evaluation/run")
+async def run_evaluation_task(
+    request: RunEvaluationRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Trigger a batch evaluation using the provided dataset."""
-    dataset_path = request.dataset_path or "app/data/eval_dataset.json"
-    
-    import os
-    if not os.path.exists(dataset_path):
-        raise HTTPException(status_code=400, detail=f"Dataset file not found at {dataset_path}")
+    """Trigger a batch evaluation using a whitelisted dataset ID."""
+    # 1. Resolve secure path from registry
+    dataset_path = ALLOWED_DATASETS.get(request.dataset_id)
+    if not dataset_path:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unknown dataset_id: '{request.dataset_id}'. Allowed: {', '.join(ALLOWED_DATASETS.keys())}"
+        )
+
+    # 2. Verify existence safely
+    if not dataset_path.exists():
+        logger.error("Dataset file missing on server: %s", dataset_path)
+        raise HTTPException(status_code=500, detail="Evaluation dataset is currently unavailable.")
         
-    # Read to count questions for estimate
-    import json
-    try:
+    # Read to count questions for estimate (offload to thread to avoid blocking)
+    def _read_dataset():
         with open(dataset_path, "r", encoding="utf-8") as f:
-            dataset = json.load(f)
-            total_questions = len(dataset)
+            return json.load(f)
+
+    try:
+        dataset = await asyncio.to_thread(_read_dataset)
+        total_questions = len(dataset)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to read dataset: {exc}")
+        logger.error("Failed to read dataset %s: %s", dataset_path, exc)
+        raise HTTPException(status_code=500, detail="Failed to load evaluation dataset content.")
         
-    job_id = "eval_" + str(int(datetime.utcnow().timestamp()))
+    job_id = f"eval_{uuid4().hex[:12]}"
     
-    # Run in background
-    background_tasks.add_task(background_evaluate_batch, dataset_path, db, user_id)
+    # Fire-and-forget background task (independent of request lifecycle)
+    asyncio.create_task(background_evaluate_batch(job_id, str(dataset_path), current_user.sub))
     
     return {
-        "message": "Evaluation started",
+        "message": "Evaluation started in background.",
         "job_id": job_id,
-        "estimated_minutes": total_questions * 0.5
+        "estimated_minutes": round(total_questions * 0.5, 1)
     }
 
 
 @router.get("/evaluate/results")
 async def get_evaluation_results(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Get the most recent batch evaluation result for the user."""
-    stmt = select(EvaluationResult).where(EvaluationResult.user_id == user_id).order_by(desc(EvaluationResult.evaluated_at)).limit(1)
+    stmt = select(EvaluationResult).where(EvaluationResult.user_id == current_user.sub).order_by(desc(EvaluationResult.evaluated_at)).limit(1)
     result = await db.execute(stmt)
     eval_record = result.scalar_one_or_none()
     
@@ -150,10 +182,10 @@ async def get_evaluation_results(
 @router.get("/evaluate/results/history")
 async def get_evaluation_history(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Get a summary of all past batch evaluations for the user."""
-    stmt = select(EvaluationResult).where(EvaluationResult.user_id == user_id).order_by(desc(EvaluationResult.evaluated_at))
+    stmt = select(EvaluationResult).where(EvaluationResult.user_id == current_user.sub).order_by(desc(EvaluationResult.evaluated_at))
     result = await db.execute(stmt)
     eval_records = result.scalars().all()
     

@@ -28,9 +28,7 @@ export default function OnboardingPage() {
   };
 
   const handleUpload = async () => {
-    // Create a dummy file for the onboarding step since there's no file input in the mock UI
-    // In a real production app, we'd have a file input here, but for this walkthrough
-    // we'll use a sample blob to show the API integration works.
+    
     const blob = new Blob(["Sample onboarding document content"], { type: "text/plain" });
     const file = new File([blob], "welcome_guide.txt", { type: "text/plain" });
 

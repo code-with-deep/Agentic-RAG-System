@@ -31,6 +31,19 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=_new_uuid)
+    sub = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, nullable=True)
+    full_name = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    
+    # Relationships
+    documents = relationship("Document", back_populates="user")
+    queries = relationship("Query", back_populates="user")
+
+
 class Document(Base):
     __tablename__ = "documents"
     id = Column(String, primary_key=True, default=_new_uuid)
@@ -42,7 +55,9 @@ class Document(Base):
     tags = Column(JSON, nullable=False, default=list)
     chunk_counts = Column(JSON, nullable=False, default=dict)
     summary = Column(Text, nullable=True)
-    user_id = Column(String, nullable=True, index=True)
+    user_id = Column(String, ForeignKey("users.sub"), nullable=True, index=True)
+    
+    user = relationship("User", back_populates="documents")
 
 
 class Query(Base):
@@ -60,8 +75,10 @@ class Query(Base):
     hallucination_score = Column(Float, nullable=True)
     iterations_count = Column(Integer, nullable=False, default=0)
     total_latency_ms = Column(Integer, nullable=True)
-    user_id = Column(String, nullable=True, index=True)
+    user_id = Column(String, ForeignKey("users.sub"), nullable=True, index=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    
+    user = relationship("User", back_populates="queries")
     claims = relationship("Claim", back_populates="query", cascade="all, delete-orphan")
     decision_traces = relationship("DecisionTrace", back_populates="query", cascade="all, delete-orphan")
     iterations = relationship("Iteration", back_populates="query", cascade="all, delete-orphan")

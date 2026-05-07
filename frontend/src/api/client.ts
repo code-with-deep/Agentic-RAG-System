@@ -26,16 +26,16 @@ const client = axios.create({
 // Request interceptor for logging and auth headers
 client.interceptors.request.use(
   (config) => {
-    // Inject User Email for session isolation
+    // Inject JWT Bearer Token for secure authentication
     const userData = localStorage.getItem("docmind_user");
     if (userData) {
       try {
         const user = JSON.parse(userData);
-        if (user && user.email) {
-          config.headers["X-User-Email"] = user.email;
+        if (user && user.token) {
+          config.headers["Authorization"] = `Bearer ${user.token}`;
         }
       } catch (e) {
-        console.error("Failed to parse user data for header injection", e);
+        console.error("Failed to parse user data for JWT injection", e);
       }
     }
 

@@ -12,7 +12,7 @@ from app.config import settings
 from app.services.confidence_scorer import score
 from app.services.decision_tracer import STEP_REGENERATION, DecisionTracer
 from app.services.hallucination_detector import detect
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm
 
 logger = logging.getLogger("agentic_rag.iterative_refiner")
 
@@ -110,7 +110,7 @@ async def generate_answer(
     )
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         return response.content if hasattr(response, "content") else str(response)
     except Exception as exc:
         logger.error("Initial generation failed: %s", exc)
@@ -135,7 +135,7 @@ async def regenerate_strict(
     )
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         return response.content if hasattr(response, "content") else str(response)
     except Exception as exc:
         logger.error("Strict regeneration failed: %s", exc)
@@ -149,7 +149,7 @@ async def refine(
     query: str, 
     context_chunks: List[dict],
     initial_answer: str, 
-    initial_hallucination_result: dict,
+    current_hallucination_result: dict,
     initial_confidence_result: dict,
     chunk_classifications: List[dict],
     conversation_history: Optional[List[dict]] = None,
@@ -160,38 +160,36 @@ async def refine(
     
     best_answer = initial_answer
     best_score = initial_confidence_result.get("confidence_percentage", 0.0)
-    best_hallucination = initial_hallucination_result
+    best_hallucination = current_hallucination_result
     best_confidence = initial_confidence_result
-    
-    current_iteration = 1
     
     # Store initial iteration
     iterations_history.append({
         "iteration_number": 0,
         "query_used": query,
         "answer_generated": initial_answer,
-        "hallucination_score": initial_hallucination_result.get("hallucination_score", 0.0),
+        "hallucination_score": current_hallucination_result.get("hallucination_score", 0.0),
         "confidence_score": initial_confidence_result.get("confidence_percentage", 0.0),
         "changes_made": "Initial generation"
     })
     
     logger.info("Starting refiner loop. Initial score: %.1f%%", best_score)
     
-    while current_iteration <= settings.max_generation_retries:
+    for current_iteration in range(1, settings.max_generation_retries + 1):
         # STEP 1 - Check if regeneration needed
-        needs_regeneration = initial_hallucination_result.get("regenerate", False)
+        needs_regeneration = current_hallucination_result.get("regenerate", False)
         if not needs_regeneration and current_iteration == 1:
             logger.info("No refinement needed on initial check")
             break
             
-        unsupported = initial_hallucination_result.get("unsupported_claims", [])
+        unsupported = current_hallucination_result.get("unsupported_claims", [])
         
         # STEP 2 - Regenerate with strict prompt
         if tracer:
             tracer.log(
                 step_name=STEP_REGENERATION,
                 decision=f"Regenerating iteration {current_iteration}",
-                reasoning=f"Hallucination score was {initial_hallucination_result.get('hallucination_score', 0.0):.2f}",
+                reasoning=f"Hallucination score was {current_hallucination_result.get('hallucination_score', 0.0):.2f}",
                 input_data={"unsupported_count": len(unsupported)},
                 output_data={"iteration": current_iteration}
             )
@@ -242,14 +240,12 @@ async def refine(
         })
         
         # STEP 7 - Update for next loop
-        initial_hallucination_result = new_hallucination
+        current_hallucination_result = new_hallucination
         
         # If the new generation is good enough, we can break early
         if not new_hallucination.get("regenerate", False):
             logger.info("Iteration %d fixed hallucinations, breaking early", current_iteration)
             break
-            
-        current_iteration += 1
 
     return {
         "final_answer": best_answer,

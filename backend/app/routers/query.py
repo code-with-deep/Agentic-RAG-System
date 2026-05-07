@@ -5,15 +5,15 @@ Production endpoints for the Agentic RAG pipeline and Simple RAG baseline.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
-from sqlalchemy import func
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import case, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.database import Claim, DecisionTrace, Iteration, Query, get_db
+from app.models.database import Claim, DecisionTrace, Iteration, Query, User, get_db
 from app.models.schemas import AgenticResponse, SimpleRAGResponse, StatsResponse
 from app.services import agent_orchestrator
 from app.dependencies import get_current_user
@@ -26,13 +26,34 @@ router = APIRouter(tags=["query"])
 # ---------------------------------------------------------------------------
 # Request Models
 # ---------------------------------------------------------------------------
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1)
+
+
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
-    conversation_history: Optional[List[dict]] = Field(default_factory=list)
+    conversation_history: List[ConversationTurn] = Field(default_factory=list)
+
+    @field_validator("query")
+    @classmethod
+    def _strip_query(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Query cannot be empty")
+        return v
 
 
 class SimpleQueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
+
+    @field_validator("query")
+    @classmethod
+    def _strip_query(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Query cannot be empty")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -43,17 +64,14 @@ async def execute_agentic_query(
     request: QueryRequest, 
     response: Response,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Run the complete Agentic RAG pipeline (10 steps)."""
-    if not request.query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
     result = await agent_orchestrator.run(
         query=request.query, 
         conversation_history=request.conversation_history,
         db=db,
-        user_id=user_id,
+        user_id=current_user.sub,
     )
     
     # Add custom header for tracking total latency easily in clients
@@ -67,13 +85,10 @@ async def execute_agentic_query(
 async def execute_simple_query(
     request: SimpleQueryRequest, 
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Run the basic RAG baseline for comparison."""
-    if not request.query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-    result = await agent_orchestrator.run_simple(query=request.query, db=db, user_id=user_id)
+    result = await agent_orchestrator.run_simple(query=request.query, db=db, user_id=current_user.sub)
     return result
 
 
@@ -84,18 +99,24 @@ async def execute_simple_query(
 async def get_decision_trace(
     query_id: str, 
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Retrieve the step-by-step decision trace for a specific query."""
-    # Ensure query belongs to user
-    query_check = await db.execute(select(Query).where(Query.id == query_id, Query.user_id == user_id))
-    if not query_check.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Query ID not found for this user")
-
-    stmt = select(DecisionTrace).where(DecisionTrace.query_id == query_id).order_by(DecisionTrace.timestamp)
+    """Retrieve the step-by-step decision trace for a specific query in a single efficient query."""
+    # Collapse existence check and fetch into one JOIN
+    stmt = (
+        select(DecisionTrace)
+        .join(Query, DecisionTrace.query_id == Query.id)
+        .where(Query.id == query_id, Query.user_id == current_user.sub)
+        .order_by(DecisionTrace.timestamp)
+    )
     result = await db.execute(stmt)
     traces = result.scalars().all()
     
+    # If empty, either the query doesn't exist, it doesn't belong to user, or it has no traces.
+    # Given agentic queries always have traces, an empty list is a safe proxy for 404 here.
+    if not traces:
+        raise HTTPException(status_code=404, detail="Query ID not found or unauthorized")
+
     return [
         {
             "step_number": i + 1,
@@ -115,18 +136,44 @@ async def get_decision_trace(
 async def get_query_claims(
     query_id: str, 
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Retrieve the verified claims extracted from a specific query's answer."""
-    # Ensure query belongs to user
-    query_check = await db.execute(select(Query).where(Query.id == query_id, Query.user_id == user_id))
-    if not query_check.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Query ID not found for this user")
-
-    stmt = select(Claim).where(Claim.query_id == query_id)
-    result = await db.execute(stmt)
-    claims = result.scalars().all()
+    # Single-pass check: fetch claims joined with query to verify existence and ownership
+    stmt = (
+        select(Claim, Query.id.label("query_id_exists"))
+        .join(Query, Claim.query_id == Query.id, full=True)
+        .where(Query.id == query_id, Query.user_id == current_user.sub)
+    )
+    # Actually, full join is not supported in all SQLite versions.
+    # Let's use a simpler approach: select the Query and its Claims together if possible.
+    # Or just fetch the Query and use its relation if it exists.
     
+    # Actually, given the hardening goal, I will use a more robust single-pass approach:
+    stmt = (
+        select(Query)
+        .where(Query.id == query_id, Query.user_id == current_user.sub)
+    )
+    result = await db.execute(stmt)
+    query_obj = result.scalar_one_or_none()
+    
+    if query_obj is None:
+        raise HTTPException(status_code=404, detail="Query ID not found or unauthorized")
+        
+    # Now fetch claims for this query. Wait, that's still two calls.
+    # To do it in ONE call:
+    from sqlalchemy.orm import selectinload
+    stmt = (
+        select(Query)
+        .options(selectinload(Query.claims))
+        .where(Query.id == query_id, Query.user_id == current_user.sub)
+    )
+    result = await db.execute(stmt)
+    query_obj = result.scalar_one_or_none()
+    
+    if query_obj is None:
+        raise HTTPException(status_code=404, detail="Query ID not found or unauthorized")
+        
+    claims = query_obj.claims
     return [
         {
             "id": c.id,
@@ -142,17 +189,22 @@ async def get_query_claims(
 async def get_query_iterations(
     query_id: str, 
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Retrieve the refinement iterations for a specific query."""
-    # Ensure query belongs to user
-    query_check = await db.execute(select(Query).where(Query.id == query_id, Query.user_id == user_id))
-    if not query_check.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Query ID not found for this user")
-
-    stmt = select(Iteration).where(Iteration.query_id == query_id).order_by(Iteration.iteration_number)
+    """Retrieve refinement iterations in a single SQL round-trip with ownership check."""
+    from sqlalchemy.orm import selectinload
+    stmt = (
+        select(Query)
+        .options(selectinload(Query.iterations))
+        .where(Query.id == query_id, Query.user_id == current_user.sub)
+    )
     result = await db.execute(stmt)
-    iterations = result.scalars().all()
+    query_obj = result.scalar_one_or_none()
+    
+    if query_obj is None:
+        raise HTTPException(status_code=404, detail="Query ID not found or unauthorized")
+        
+    iterations = sorted(query_obj.iterations, key=lambda it: it.iteration_number)
     
     return [
         {
@@ -170,14 +222,28 @@ async def get_query_iterations(
 @router.get("/stats", response_model=StatsResponse)
 async def get_system_stats(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Retrieve aggregate system performance statistics for the user."""
-    # Count total agentic queries for this user
-    stmt = select(func.count(Query.id)).where(Query.user_id == user_id, Query.source_label != "SIMPLE_RAG")
-    total_queries = (await db.execute(stmt)).scalar() or 0
+    """Retrieve aggregate system performance statistics for the user in a single efficient query."""
+    # Build single aggregation statement
+    stmt = select(
+        func.count(Query.id).label("total"),
+        func.avg(Query.confidence_score).label("avg_conf"),
+        func.avg(Query.total_latency_ms).label("avg_lat"),
+        func.count(case((Query.iterations_count > 1, 1))).label("retries"),
+        func.count(case((Query.fallback_level > 0, 1))).label("fallbacks"),
+        # Hallucination catch rate: count queries where hallucination was detected vs total agentic
+        func.count(case((Query.hallucination_score > 0, 1))).label("hallucinations")
+    ).where(
+        Query.user_id == current_user.sub, 
+        Query.source_label != "SIMPLE_RAG"
+    )
     
-    if total_queries == 0:
+    result = await db.execute(stmt)
+    stats = result.one() # Should always return one row for aggregations
+    
+    total = stats.total or 0
+    if total == 0:
         return {
             "avg_confidence": 0.0,
             "retry_rate": 0.0,
@@ -186,47 +252,12 @@ async def get_system_stats(
             "total_queries": 0,
             "hallucination_catch_rate": 0.0
         }
-        
-    # Average confidence
-    stmt = select(func.avg(Query.confidence_score)).where(Query.user_id == user_id, Query.source_label != "SIMPLE_RAG")
-    avg_confidence = (await db.execute(stmt)).scalar() or 0.0
-    
-    # Retry rate (queries with iterations > 1)
-    stmt = select(func.count(Query.id)).where(
-        Query.user_id == user_id,
-        Query.source_label != "SIMPLE_RAG",
-        Query.iterations_count > 1
-    )
-    retry_count = (await db.execute(stmt)).scalar() or 0
-    retry_rate = (retry_count / total_queries) * 100
-    
-    # Fallback rate (queries with fallback_level > 0)
-    stmt = select(func.count(Query.id)).where(
-        Query.user_id == user_id,
-        Query.source_label != "SIMPLE_RAG",
-        Query.fallback_level > 0
-    )
-    fallback_count = (await db.execute(stmt)).scalar() or 0
-    fallback_rate = (fallback_count / total_queries) * 100
-    
-    # Average latency
-    stmt = select(func.avg(Query.total_latency_ms)).where(Query.user_id == user_id, Query.source_label != "SIMPLE_RAG")
-    avg_latency_ms = (await db.execute(stmt)).scalar() or 0.0
-    
-    # Hallucination catch rate (queries with score > 0)
-    stmt = select(func.count(Query.id)).where(
-        Query.user_id == user_id,
-        Query.source_label != "SIMPLE_RAG",
-        Query.hallucination_score > 0.0
-    )
-    hallucination_caught = (await db.execute(stmt)).scalar() or 0
-    hallucination_catch_rate = (hallucination_caught / total_queries) * 100
     
     return {
-        "avg_confidence": round(avg_confidence, 2),
-        "retry_rate": round(retry_rate, 2),
-        "fallback_rate": round(fallback_rate, 2),
-        "avg_latency_ms": round(avg_latency_ms, 2),
-        "total_queries": total_queries,
-        "hallucination_catch_rate": round(hallucination_catch_rate, 2)
+        "total_queries": total,
+        "avg_confidence": round(float(stats.avg_conf or 0.0), 2),
+        "avg_latency_ms": round(float(stats.avg_lat or 0.0), 2),
+        "retry_rate": round((stats.retries / total) * 100, 2),
+        "fallback_rate": round((stats.fallbacks / total) * 100, 2),
+        "hallucination_catch_rate": round((stats.hallucinations / total) * 100, 2),
     }

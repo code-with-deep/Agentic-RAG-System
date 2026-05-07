@@ -132,6 +132,7 @@ class SimpleRAGResponse(BaseModel):
     answer: str
     chunks_used: int
     latency_ms: int
+    retrieved_chunks: List[ChunkResult] = Field(default_factory=list)
 
 
 class EvaluationResult(BaseModel):

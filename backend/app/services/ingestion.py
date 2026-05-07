@@ -27,7 +27,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document as LCDocument
 from rank_bm25 import BM25Okapi
 
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm, parse_llm_json
 from app.config import settings
 
 logger = logging.getLogger("agentic_rag.ingestion")
@@ -62,8 +62,10 @@ def get_chroma_collection():
         logger.info("ChromaDB collection 'agentic_rag_chunks' ready")
     return _chroma_collection
 
+from collections import OrderedDict
+
 # BM25 per-user cache to avoid rebuilding every time
-_user_bm25_cache: Dict[str, Dict[str, Any]] = {}
+_user_bm25_cache = OrderedDict()
 
 async def get_user_bm25(user_id: Optional[str]) -> Dict[str, Any]:
     """
@@ -75,38 +77,48 @@ async def get_user_bm25(user_id: Optional[str]) -> Dict[str, Any]:
 
     # Check cache first
     if user_id in _user_bm25_cache:
+        # Move to end to mark as most recently used
+        _user_bm25_cache.move_to_end(user_id)
         return _user_bm25_cache[user_id]
 
     collection = get_chroma_collection()
     
-    # Filter ChromaDB by user_id
+    # Filter ChromaDB by user_id with a safety limit
     kwargs = {
         "where": {"user_id": user_id},
-        "include": ["documents", "metadatas"]
+        "include": ["documents", "metadatas"],
+        "limit": 50000  # Safety guardrail to prevent OOM on massive user data
     }
     
-    # Note: collection.get() doesn't support pagination easily in older versions, 
-    # but for a standard RAG system with few thousand chunks per user it's fine.
     all_data = await asyncio.to_thread(collection.get, **kwargs)
     
     if not all_data["ids"]:
         return {"index": None, "corpus": []}
+    
+    if len(all_data["ids"]) >= 50000:
+        logger.warning(
+            "User %s has reached the 50,000 chunk limit for BM25 indexing. "
+            "Downstream retrieval might be incomplete.", 
+            user_id
+        )
 
     tokenized = []
     corpus_items: List[Dict[str, Any]] = []
     for idx, (doc_text, meta, cid) in enumerate(
         zip(all_data["documents"], all_data["metadatas"], all_data["ids"])
     ):
-        tokens = doc_text.lower().split()
+        tokens = re.findall(r"\w+", doc_text.lower())
         tokenized.append(tokens)
         corpus_items.append({"chunk_id": cid, "text": doc_text, "metadata": meta})
 
     index = BM25Okapi(tokenized)
     result = {"index": index, "corpus": corpus_items}
     
-    # Update cache (limited to last 10 users to save memory)
-    if len(_user_bm25_cache) > 10:
-        _user_bm25_cache.clear()
+    # Update cache with LRU eviction
+    if len(_user_bm25_cache) >= 10:
+        # Evict the least recently used (first) item
+        _user_bm25_cache.popitem(last=False)
+        
     _user_bm25_cache[user_id] = result
     
     return result
@@ -130,7 +142,7 @@ def load_document(file_path: str, file_type: str) -> List[LCDocument]:
         loader = PyPDFLoader(file_path)
     elif file_type_lower == "txt":
         loader = TextLoader(file_path, encoding="utf-8")
-    elif file_type_lower in ("docx", "doc"):
+    elif file_type_lower == "docx":
         loader = Docx2txtLoader(file_path)
     elif file_type_lower in ("md", "markdown"):
         loader = UnstructuredMarkdownLoader(file_path)
@@ -303,6 +315,7 @@ def chunk_semantic(docs: List[LCDocument], doc_id: str) -> List[dict]:
 
     chunks: List[dict] = []
     current_sentences: List[str] = [sentences[0]]
+    current_embeddings: List[np.ndarray] = [embeddings[0]]
     chunk_idx = 0
 
     for i in range(1, len(sentences)):
@@ -312,6 +325,9 @@ def chunk_semantic(docs: List[LCDocument], doc_id: str) -> List[dict]:
         current_text = " ".join(current_sentences)
 
         if sim < similarity_threshold or len(current_text) > max_chunk_chars:
+            # Mean-pool the sentence embeddings to form the chunk embedding
+            chunk_embedding = np.mean(current_embeddings, axis=0).tolist()
+            
             chunks.append({
                 "chunk_id": str(uuid.uuid4()),
                 "text": current_text,
@@ -320,13 +336,17 @@ def chunk_semantic(docs: List[LCDocument], doc_id: str) -> List[dict]:
                 "strategy": "semantic",
                 "doc_id": doc_id,
                 "chunk_index": chunk_idx,
+                "embedding": chunk_embedding
             })
             current_sentences = [sentences[i]]
+            current_embeddings = [embeddings[i]]
             chunk_idx += 1
         else:
             current_sentences.append(sentences[i])
+            current_embeddings.append(embeddings[i])
 
     if current_sentences:
+        chunk_embedding = np.mean(current_embeddings, axis=0).tolist()
         chunks.append({
             "chunk_id": str(uuid.uuid4()),
             "text": " ".join(current_sentences),
@@ -335,6 +355,7 @@ def chunk_semantic(docs: List[LCDocument], doc_id: str) -> List[dict]:
             "strategy": "semantic",
             "doc_id": doc_id,
             "chunk_index": chunk_idx,
+            "embedding": chunk_embedding
         })
 
     logger.info("Semantic chunking produced %d chunks for doc %s", len(chunks), doc_id)
@@ -367,17 +388,36 @@ def _store_chunks_in_chroma(chunks: List[dict], user_id: str) -> None:
         batch = chunks[start : start + batch_size]
         ids = [c["chunk_id"] for c in batch]
         documents = [c["text"] for c in batch]
-        embeddings = get_embedding_model().encode(documents, show_progress_bar=False).tolist()
+        
+        # Optimisation: Check for pre-computed embeddings (e.g. from semantic chunking)
+        # to avoid redundant compute.
+        final_embeddings = [None] * len(batch)
+        docs_to_encode = []
+        indices_to_encode = []
+        
+        for i, c in enumerate(batch):
+            if "embedding" in c and c["embedding"]:
+                final_embeddings[i] = c["embedding"]
+            else:
+                docs_to_encode.append(c["text"])
+                indices_to_encode.append(i)
+                
+        if docs_to_encode:
+            encoded = get_embedding_model().encode(docs_to_encode, show_progress_bar=False).tolist()
+            for i, emb in zip(indices_to_encode, encoded):
+                final_embeddings[i] = emb
+
         metadatas = []
         for c in batch:
-            meta = {k: v for k, v in c.items() if k not in ("text",)}
-            meta["user_id"] = user_id  # Add user_id to metadata for isolation
+            # Remove embedding from metadata to keep it clean, then flatten
+            meta = {k: v for k, v in c.items() if k not in ("text", "embedding")}
+            meta["user_id"] = user_id
             metadatas.append(_flatten_metadata(meta))
 
         get_chroma_collection().add(
             ids=ids,
             documents=documents,
-            embeddings=embeddings,
+            embeddings=final_embeddings,
             metadatas=metadatas,
         )
 
@@ -405,18 +445,9 @@ Format:
 }}"""
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
-        
-        # Clean potential markdown
-        content = content.strip()
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.lower().startswith("json"):
-                content = content[4:]
-            content = content.strip()
-            
-        data = json.loads(content)
+        data = parse_llm_json(content)
         tags = data.get("tags", [])
         if not isinstance(tags, list):
             tags = [str(tags)] if tags else []

@@ -15,7 +15,6 @@ aiosqlite==0.21.0
 # LangChain Ecosystem
 langchain==0.3.25
 langchain-community==0.3.24
-langchain-google-genai==2.1.4
 langchain-groq==0.3.2
 
 # Vector Store and Embeddings
@@ -35,4 +34,6 @@ tavily-python==0.5.0
 duckduckgo-search==8.0.1
 
 # HTTP Client
+# Utilities
+python-magic==0.4.27
 httpx==0.28.1

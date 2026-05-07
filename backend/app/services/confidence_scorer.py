@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from app.config import settings
 from app.services.decision_tracer import STEP_CONFIDENCE, DecisionTracer
 from app.services.hallucination_detector import format_context_for_verification
-from app.services.llm_client import llm
+from app.services.llm_client import get_llm, parse_llm_json
 
 logger = logging.getLogger("agentic_rag.confidence_scorer")
 
@@ -116,17 +116,9 @@ async def calculate_context_coverage(query: str, chunks: List[dict]) -> Dict[str
     prompt = COVERAGE_PROMPT.format(query=query, context=context_str)
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
-        response_text = response_text.strip()
-        
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.lower().startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-            
-        result = json.loads(response_text)
+        result = parse_llm_json(response_text)
         return {
             "score": float(result.get("score", 0.5)),
             "reasoning": result.get("reasoning", ""),
@@ -145,7 +137,7 @@ async def calculate_coherence(query: str, answer: str) -> Dict[str, Any]:
     prompt = COHERENCE_PROMPT.format(query=query, answer=answer)
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await get_llm().ainvoke(prompt)
         response_text = response.content if hasattr(response, "content") else str(response)
         response_text = response_text.strip()
         
