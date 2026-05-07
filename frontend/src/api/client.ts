@@ -9,7 +9,15 @@ import type {
   EvaluationResult,
 } from "../types";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+let API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+// Ensure the URL ends with /api for robustness in deployment
+if (API_URL.endsWith("/")) {
+  API_URL = API_URL.slice(0, -1);
+}
+if (!API_URL.endsWith("/api")) {
+  API_URL += "/api";
+}
 
 const client = axios.create({
   baseURL: API_URL,
