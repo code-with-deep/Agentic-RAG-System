@@ -57,7 +57,7 @@ class DecisionTracer:
             "input_summary": input_data or {},
             "output_summary": output_data or {},
             "time_taken_ms": time_taken_ms,
-            "timestamp": now.isoformat(),
+            "timestamp": now,
             "alternatives_considered": alternatives_considered or [],
         }
         self.trace.append(entry)

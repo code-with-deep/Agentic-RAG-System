@@ -92,13 +92,11 @@ export function DocumentCard({ document, onQuery, onDelete }: DocumentCardProps)
         </div>
 
         {/* Action overlay on hover */}
-        <div className="absolute inset-0 bg-primary/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-3 p-4">
+        <div className="absolute inset-0 bg-primary/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-3 p-4 pointer-events-none group-hover:pointer-events-auto">
           <Button variant="gradient" className="w-full" onClick={() => onQuery(document.id)}>
             <Search className="w-4 h-4 mr-2" /> Query Document
           </Button>
-          <Button variant="danger" className="w-full" onClick={() => onDelete(document.id)}>
-            <Trash2 className="w-4 h-4 mr-2" /> Delete
-          </Button>
+
         </div>
       </CardContent>
     </Card>

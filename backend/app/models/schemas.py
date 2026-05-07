@@ -122,6 +122,7 @@ class AgenticResponse(BaseModel):
     total_latency_ms: int
     decision_trace: List[TraceStep]
     retrieved_chunks: List[ChunkResult]
+    annotation_map: Optional[List[Dict[str, Any]]] = None
 
 
 class SimpleRAGResponse(BaseModel):

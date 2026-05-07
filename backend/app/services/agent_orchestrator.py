@@ -170,12 +170,17 @@ async def run(
         # Ensure we return something gracefully
         state.generated_answer = state.generated_answer or "I encountered an internal error processing your request."
         state.source_label = "ERROR"
-        if not state.confidence_result:
+        if not state.confidence_result or "final_score" not in state.confidence_result:
             state.confidence_result = {
+                "retrieval_relevance": 0.0,
+                "faithfulness": 0.0,
+                "context_coverage": 0.0,
+                "coherence": 0.0,
+                "final_score": 0.0,
                 "confidence_percentage": 0.0,
                 "confidence_level": "VERY_LOW",
                 "confidence_badge": "Error",
-                "disclaimer": "Pipeline encountered a critical error",
+                "disclaimer": f"Pipeline error: {str(exc)}",
                 "breakdown": {}
             }
 
@@ -245,27 +250,75 @@ async def run(
         formatted_chunks.append(formatted_chunk)
 
     # STEP 10 -- Build and return AgenticResponse dict
-    return {
-        "query_id": state.query_id,
-        "original_query": state.original_query,
-        "query_type": state.query_type,
-        "routing_confidence": state.routing_confidence,
-        "strategy_used": state.strategy_used,
-        "final_answer": state.generated_answer,
-        "confidence_breakdown": state.confidence_result,
-        "source_label": state.source_label,
-        "claims": state.hallucination_result.get("claims", []),
-        "hallucination_score": state.hallucination_result.get("hallucination_score", 0.0),
-        "fallback_level": state.fallback_level,
-        "iterations_count": state.iterations_count,
-        "total_latency_ms": state.total_latency_ms,
-        "decision_trace": state.tracer.get_trace(),
-        "retrieved_chunks": formatted_chunks,
-        "annotation_map": hallucination_detector.build_annotation_map(
-            state.generated_answer,
-            state.hallucination_result.get("claims", [])
-        )
-    }
+    try:
+        # Final safety check on confidence_result to satisfy Pydantic
+        required_conf_fields = [
+            "retrieval_relevance", "faithfulness", "context_coverage", 
+            "coherence", "final_score", "confidence_percentage", "confidence_level"
+        ]
+        if not state.confidence_result:
+            state.confidence_result = {}
+            
+        for field in required_conf_fields:
+            if field not in state.confidence_result:
+                if field == "confidence_level":
+                    state.confidence_result[field] = "UNKNOWN"
+                else:
+                    state.confidence_result[field] = 0.0
+
+        # Build annotation map with safety
+        annotations = []
+        try:
+            annotations = hallucination_detector.build_annotation_map(
+                state.generated_answer,
+                state.hallucination_result.get("claims", [])
+            )
+        except Exception as e:
+            logger.error("Annotation map build failed: %s", e)
+
+        return {
+            "query_id": state.query_id,
+            "original_query": state.original_query,
+            "query_type": state.query_type,
+            "routing_confidence": float(state.routing_confidence),
+            "strategy_used": state.strategy_used,
+            "final_answer": state.generated_answer,
+            "confidence_breakdown": state.confidence_result,
+            "source_label": state.source_label,
+            "claims": state.hallucination_result.get("claims", []),
+            "hallucination_score": float(state.hallucination_result.get("hallucination_score", 0.0)),
+            "fallback_level": int(state.fallback_level),
+            "iterations_count": int(state.iterations_count),
+            "total_latency_ms": int(state.total_latency_ms),
+            "decision_trace": state.tracer.get_trace(),
+            "retrieved_chunks": formatted_chunks,
+            "annotation_map": annotations
+        }
+    except Exception as exc:
+        logger.error("Final response construction failed: %s", exc, exc_info=True)
+        # Ultimate fallback to avoid 500
+        return {
+            "query_id": state.query_id,
+            "original_query": state.original_query,
+            "query_type": "ERROR",
+            "routing_confidence": 0.0,
+            "strategy_used": "fallback",
+            "final_answer": "I encountered a critical error while formatting the response.",
+            "confidence_breakdown": {
+                "retrieval_relevance": 0.0, "faithfulness": 0.0, "context_coverage": 0.0,
+                "coherence": 0.0, "final_score": 0.0, "confidence_percentage": 0.0,
+                "confidence_level": "ERROR"
+            },
+            "source_label": "ERROR",
+            "claims": [],
+            "hallucination_score": 1.0,
+            "fallback_level": 0,
+            "iterations_count": 1,
+            "total_latency_ms": 0,
+            "decision_trace": [],
+            "retrieved_chunks": [],
+            "annotation_map": []
+        }
 
 
 # ---------------------------------------------------------------------------

@@ -13,9 +13,6 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
 const client = axios.create({
   baseURL: API_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 // Request interceptor for logging and auth headers
@@ -47,13 +44,16 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     let message = "An unexpected API error occurred.";
+    const status = error.response?.status;
+    
     if (error.response?.data?.detail) {
       const detail = error.response.data.detail;
       message = typeof detail === "string" ? detail : JSON.stringify(detail);
     } else if (error.message) {
       message = error.message;
     }
-    console.error(`[API Error]`, message);
+    
+    console.error(`[API Error] ${status ? `[${status}] ` : ""}${message}`, error.response?.data);
     return Promise.reject(new Error(message));
   }
 );
@@ -63,9 +63,7 @@ export async function uploadDocument(file: File, tags: string[]): Promise<Docume
   const formData = new FormData();
   formData.append("file", file);
   formData.append("tags", tags.join(","));
-  const response = await client.post<Document>("/documents/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const response = await client.post<Document>("/documents/upload", formData);
   return response.data;
 }
 
