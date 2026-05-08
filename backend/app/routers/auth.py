@@ -19,7 +19,8 @@ logger = logging.getLogger("agentic_rag.routers.auth")
 
 router = APIRouter(tags=["auth"])
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Using pbkdf2_sha256 for maximum compatibility and security on all platforms (Windows/Linux)
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 TOKEN_EXPIRY_HOURS = 72
 
@@ -75,13 +76,17 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
 
     import uuid
     user = User(
+        id=str(uuid.uuid4()),
         sub=str(uuid.uuid4()),
         email=request.email,
         full_name=request.name,
+        # pbkdf2_sha256 has no length limits and is robust on Windows
         password_hash=pwd_context.hash(request.password),
+        created_at=datetime.now(timezone.utc)
     )
     db.add(user)
-    await db.flush()
+    await db.commit() # Using commit instead of flush to ensure DB is updated
+    await db.refresh(user)
 
     token = _create_token(user)
     logger.info("New user registered: %s", request.email)
@@ -96,6 +101,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
+    # No truncation needed for pbkdf2_sha256
     if not user or not pwd_context.verify(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
