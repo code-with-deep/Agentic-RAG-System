@@ -1,7 +1,6 @@
 import { useStore } from "../../store/useStore";
 import { ChevronDown, ChevronUp, FileText, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
 import { useState } from "react";
-import { cn } from "../../lib/utils";
 
 export function Sidebar() {
   const { agenticResult } = useStore();

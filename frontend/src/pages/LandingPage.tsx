@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Brain, FileText, ChevronRight, ShieldAlert, Zap, Search, Eye, Activity } from 'lucide-react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/components/auth/AuthContext';
 
 export default function LandingPage() {
@@ -12,8 +12,6 @@ export default function LandingPage() {
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
-  const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 500], [0, 100]);
   const [navScrolled, setNavScrolled] = useState(false);
 
   useEffect(() => {

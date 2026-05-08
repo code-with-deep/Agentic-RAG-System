@@ -5,26 +5,53 @@ All settings are loaded from environment variables (.env file)
 with sensible defaults. Import `settings` from this module everywhere.
 """
 
+import logging
+import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-import os
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
+logger = logging.getLogger("agentic_rag.config")
+
+
+def _resolve_env_file() -> str:
+    """
+    Determine which .env file to load.
+    Priority:
+        1. ENV_FILE environment variable (explicit override)
+        2. .env in the current working directory
+        3. .env in the project root (parent of backend/)
+    """
+    if explicit := os.environ.get("ENV_FILE"):
+        return explicit
+    
+    cwd_env = Path(os.getcwd()) / ".env"
+    if cwd_env.exists():
+        return str(cwd_env)
+    
+    # When running from backend/, look one level up (project root)
+    parent_env = Path(os.getcwd()).parent / ".env"
+    if parent_env.exists():
+        return str(parent_env)
+    
+    return str(cwd_env)  # fallback
+
 
 class Settings(BaseSettings):
     """Application-wide settings loaded from .env with defaults."""
 
     model_config = SettingsConfigDict(
-        env_file=os.environ.get("ENV_FILE", str(Path(os.getcwd()) / ".env")),
+        env_file=_resolve_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # ── LLM Provider ──────────────────────────────────
-    llm_provider: str = Field(default="groq", description="LLM provider: groq only")
     groq_model: str = Field(default="llama-3.3-70b-versatile", description="Groq model name")
 
     # ── API Keys ──────────────────────────────────────
@@ -34,15 +61,16 @@ class Settings(BaseSettings):
     # ── Storage Paths ─────────────────────────────────
     chroma_db_path: str = Field(default="./data/chroma", description="ChromaDB persistence path")
     sqlite_db_path: str = Field(default="./data/sqlite/agentic_rag.db", description="SQLite database path")
+    db_init_on_startup: bool = Field(default=True, description="Whether to auto-create tables on startup", alias="DB_INIT_ON_STARTUP")
 
     # ── Security ──────────────────────────────────────
-    jwt_secret: str = Field(default="SUPER_SECRET_KEY_REPLACE_IN_PROD", description="Secret key for JWT verification")
+    jwt_secret: str = Field(default="SUPER_SECRET_KEY_REPLACE_IN_PROD", description="Secret key for JWT signing")
     jwt_algorithm: str = Field(default="HS256", description="Algorithm for JWT signature")
     
     frontend_urls: str = Field(
         default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000",
         description="Comma-separated list of allowed frontend URLs for CORS",
-        alias="FRONTEND_URLS"
+        alias="FRONTEND_URLS",
     )
 
     @property
@@ -110,12 +138,20 @@ class Settings(BaseSettings):
         description="Maps query types to retrieval strategies",
     )
 
-from functools import lru_cache
 
 @lru_cache
 def get_settings() -> Settings:
     """Returns a singleton instance of the settings, loaded lazily and cached."""
-    return Settings()
+    s = Settings()
+    
+    # Startup validations
+    if not s.groq_api_key or s.groq_api_key.startswith("your_"):
+        logger.warning("GROQ_API_KEY is not set — LLM calls will fail.")
+    if s.jwt_secret in ("SUPER_SECRET_KEY_REPLACE_IN_PROD", "CHANGE_ME_generate_a_real_secret_here"):
+        logger.warning("JWT_SECRET is using a default placeholder — change this in production!")
+    
+    return s
+
 
 # Maintain backward compatibility for existing imports
 settings = get_settings()

@@ -79,7 +79,8 @@ export interface SimpleRAGResponse {
   query_id: string
   query: string
   answer: string
-  chunks_used: ChunkResult[]
+  chunks_used: number
+  retrieved_chunks: ChunkResult[]
   latency_ms: number
   source_label: string
 }

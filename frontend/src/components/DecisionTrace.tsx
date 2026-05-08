@@ -175,7 +175,7 @@ export function DecisionTrace({ trace }: DecisionTraceProps) {
                   cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                   contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.5rem' }}
                   itemStyle={{ color: '#f8fafc' }}
-                  formatter={(value: any, name: any, props: any) => [`${value}ms`, props.payload.fullName]}
+                  formatter={(value: any, _name: any, props: any) => [`${value}ms`, props.payload.fullName]}
                   labelStyle={{ display: 'none' }}
                 />
                 <Bar dataKey="time" radius={[0, 4, 4, 0]}>

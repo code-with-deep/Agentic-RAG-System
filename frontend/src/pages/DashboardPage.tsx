@@ -1,9 +1,7 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { StatCard } from '@/components/ui/StatCard';
-import { Badge } from '@/components/ui/Badge';
-import { ConfidenceBadge } from '@/components/ui/ConfidenceBadge';
 import { Search, UploadCloud, Activity, FileText, BrainCircuit, ShieldAlert, Zap, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '@/store/useStore';

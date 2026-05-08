@@ -120,7 +120,7 @@ async def upload_document(
             )
         except Exception as exc:
             logger.error("Ingestion failed: %s", exc)
-            raise HTTPException(status_code=500, detail=f"Document ingestion failed: {str(exc)}")
+            raise HTTPException(status_code=500, detail="Document ingestion failed. Please try again or contact support.")
 
     return {
         "document_id": result["doc_id"],
@@ -208,7 +208,6 @@ async def delete_document(
     chunks_deleted = delete_document_chunks(doc_id, current_user.sub)
 
     await db.delete(doc)
-    await db.commit()
 
     logger.info("Deleted document '%s' (doc_id=%s, %d chunks removed)", doc.filename, doc_id, chunks_deleted)
     return None

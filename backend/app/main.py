@@ -1,5 +1,5 @@
-
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
@@ -9,8 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.config import settings
 from app.models.database import create_all_tables
-from app.routers import config_routes, documents, evaluation, query
+from app.routers import auth, config_routes, documents, evaluation, query
 
 logger = logging.getLogger("agentic_rag")
 logging.basicConfig(
@@ -18,15 +19,16 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 
-import sys
-logger.info("Python executable: %s", sys.executable)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — run setup on startup, cleanup on shutdown."""
-    logger.info("Creating database tables...")
-    await create_all_tables()
+    # Note: In production, it is recommended to use Alembic migrations 
+    # rather than create_all_tables() for schema management.
+    if settings.db_init_on_startup:
+        logger.info("Auto-initializing database tables (DB_INIT_ON_STARTUP=true)")
+        await create_all_tables()
+    
     logger.info("Agentic RAG System started successfully")
     yield
     logger.info("Agentic RAG System shutting down")
@@ -51,6 +53,7 @@ app.add_middleware(
 )
 
 # ── Mount Routers ─────────────────────────────────────
+app.include_router(auth.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
 app.include_router(evaluation.router, prefix="/api")
@@ -72,14 +75,6 @@ for path in ("/", "/health", "/api/health"):
     app.add_api_route(path, health_check, methods=["GET"], tags=["system"])
 
 
-async def root_path_fallback(request: Request):
-    """Handle common paths at root to satisfy scanners/health checks."""
-    logger.info("Root-level access to %s detected", request.url.path)
-    return {"message": f"Please use /api{request.url.path} for API access.", "status": "active"}
-
-# Register fallback paths
-for path in ("/documents", "/stats"):
-    app.add_api_route(path, root_path_fallback, methods=["GET"], include_in_schema=False)
 
 
 # ── Global Exception Handler ─────────────────────────

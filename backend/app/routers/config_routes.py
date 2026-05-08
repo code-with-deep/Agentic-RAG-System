@@ -8,10 +8,12 @@ Note: Config updates are in-memory only and reset on server restart.
 import logging
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.dependencies import get_current_user
+from app.models.database import User
 from app.services import query_router
 
 logger = logging.getLogger("agentic_rag.routers.config")
@@ -57,7 +59,7 @@ class TestRoutingRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 @router.get("/config/routing")
-async def get_routing_config():
+async def get_routing_config(_user: User = Depends(get_current_user)):
     """Get the current routing table and available strategies."""
     return {
         "routing_table": settings.routing_table,
@@ -74,7 +76,7 @@ async def get_routing_config():
 
 
 @router.put("/config/routing")
-async def update_routing_config(request: UpdateRoutingRequest):
+async def update_routing_config(request: UpdateRoutingRequest, _user: User = Depends(get_current_user)):
     """Update the routing table. Changes are in-memory only."""
     valid_strategies = [
         "basic_vector", "hybrid_rerank", "multi_query",
@@ -106,7 +108,7 @@ async def update_routing_config(request: UpdateRoutingRequest):
 
 
 @router.get("/config/thresholds")
-async def get_thresholds_config():
+async def get_thresholds_config(_user: User = Depends(get_current_user)):
     """Get all current system thresholds and weights."""
     return {
         "hallucination_threshold": settings.hallucination_threshold,
@@ -129,7 +131,7 @@ async def get_thresholds_config():
 
 
 @router.put("/config/thresholds")
-async def update_thresholds_config(request: UpdateThresholdsRequest):
+async def update_thresholds_config(request: UpdateThresholdsRequest, _user: User = Depends(get_current_user)):
     """Update system thresholds. Changes are in-memory only."""
     # Validate weights if provided
     if request.confidence_weights:
@@ -190,7 +192,7 @@ async def update_thresholds_config(request: UpdateThresholdsRequest):
 
 
 @router.post("/config/test-routing")
-async def test_routing_endpoint(request: TestRoutingRequest):
+async def test_routing_endpoint(request: TestRoutingRequest, _user: User = Depends(get_current_user)):
     """Test how a query would be routed given current settings."""
     result = await query_router.route_query(request.query)
     

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Network, SlidersHorizontal, Settings, ShieldAlert, Cpu, Check, AlertTriangle, Play, Loader2 } from "lucide-react";
+import { Network, SlidersHorizontal, Settings, ShieldAlert, Check, AlertTriangle, Play, Loader2 } from "lucide-react";
 import { getRoutingConfig, updateRoutingConfig, getThresholds, updateThresholds, testRouting } from "../api/client";
 import { cn } from "../lib/utils";
 

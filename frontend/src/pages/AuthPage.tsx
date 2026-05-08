@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Brain, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/auth/AuthContext';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -12,6 +14,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -38,20 +41,37 @@ export default function AuthPage() {
   const strengthLabel =
     strength < 50 ? 'Weak' : strength < 100 ? 'Good' : 'Strong';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
-    setTimeout(() => {
+    try {
+      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      const payload = isLogin
+        ? { email, password }
+        : { name, email, password };
+
+      const response = await axios.post(`${API_URL}${endpoint}`, payload);
+      const { token, user } = response.data;
+
       login({
-        name: isLogin ? 'Demo User' : name,
-        email,
-        avatar_initials: isLogin ? 'DU' : name.substring(0, 2).toUpperCase(),
-        joined_date: new Date().toISOString(),
-        plan: 'free',
+        name: user.name,
+        email: user.email,
+        avatar_initials: user.avatar_initials,
+        joined_date: user.joined_date,
+        plan: user.plan,
+        token,
       });
+
       navigate(isLogin ? '/dashboard' : '/onboarding', { replace: true });
-    }, 1000);
+    } catch (err: any) {
+      const detail =
+        err?.response?.data?.detail || err?.message || 'An unexpected error occurred.';
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -138,7 +158,7 @@ export default function AuthPage() {
           >
             <button
               type="button"
-              onClick={() => setIsLogin(true)}
+              onClick={() => { setIsLogin(true); setError(''); }}
               className="flex-1 py-2 text-sm font-medium rounded-md transition-all"
               style={{
                 background: isLogin ? '#ffffff' : 'transparent',
@@ -151,7 +171,7 @@ export default function AuthPage() {
             </button>
             <button
               type="button"
-              onClick={() => setIsLogin(false)}
+              onClick={() => { setIsLogin(false); setError(''); }}
               className="flex-1 py-2 text-sm font-medium rounded-md transition-all"
               style={{
                 background: !isLogin ? '#ffffff' : 'transparent',
@@ -163,6 +183,13 @@ export default function AuthPage() {
               Sign Up
             </button>
           </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+              {error}
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -288,7 +315,7 @@ export default function AuthPage() {
             <div>
               <p className="text-sm font-medium" style={{ color: '#0f172a' }}>Secure Authentication</p>
               <p className="text-xs mt-1 leading-relaxed" style={{ color: '#64748b' }}>
-                Your connection is encrypted. Social logins (Google & GitHub) are currently disabled for security upgrades. Please use your email.
+                Your connection is encrypted. Passwords are hashed with bcrypt and never stored in plain text.
               </p>
             </div>
           </div>

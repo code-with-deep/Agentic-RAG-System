@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Brain, MessageSquare, Folder, Scale, BarChart2, Settings, Menu, X, Search, LogOut } from 'lucide-react';
+import { Brain, MessageSquare, Folder, Scale, BarChart2, Settings, Menu, Search, LogOut } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '../ui/Button';

@@ -148,7 +148,7 @@ async def get_evaluation_results(
     if not eval_record:
         raise HTTPException(
             status_code=404, 
-            detail="No evaluation has been run yet for this user. Call POST /api/evaluate/batch first."
+            detail="No evaluation has been run yet for this user. Call POST /api/evaluation/run first."
         )
         
     return {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { DocumentCard } from '@/components/ui/DocumentCard';
@@ -42,7 +42,7 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleQuery = (id: string) => {
+  const handleQuery = (_id: string) => {
     navigate('/workspace');
     toast.info('Document selected for querying');
   };

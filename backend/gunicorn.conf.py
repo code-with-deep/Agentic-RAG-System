@@ -1,5 +1,14 @@
 import os
 
+# Gunicorn configuration for production
+bind = f"0.0.0.0:{os.environ.get('PORT', '8080')}"
+workers = 1  # Keep low for memory-constrained free tiers
+worker_class = "uvicorn.workers.UvicornWorker"
+timeout = 120
+keepalive = 5
+max_requests = 500
+max_requests_jitter = 50
+
 def pre_fork(server, worker):
     """
     Set environment variables before worker processes are forked.

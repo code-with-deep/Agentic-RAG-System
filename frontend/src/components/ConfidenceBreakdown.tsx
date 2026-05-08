@@ -1,7 +1,7 @@
 import type {  ConfidenceBreakdown as ConfType  } from '../types';
 import { ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from "lucide-react";
 import { useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from "recharts";
+
 import { cn } from "../lib/utils";
 
 interface ConfidenceBreakdownProps {

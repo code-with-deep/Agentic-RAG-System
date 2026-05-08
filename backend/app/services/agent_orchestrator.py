@@ -138,7 +138,7 @@ async def run(
                 query=query,
                 context_chunks=state.retrieved_chunks,
                 initial_answer=state.generated_answer,
-                initial_hallucination_result=hallucination_result,
+                current_hallucination_result=hallucination_result,
                 initial_confidence_result=initial_confidence,
                 chunk_classifications=state.crag_result.get("chunk_classifications", []),
                 conversation_history=state.conversation_history,
@@ -227,7 +227,8 @@ async def run(
                 )
                 
             await state.tracer.save_to_db(state.query_id, db)
-            # Transaction lifecycle (commit/rollback) is managed by the get_db dependency
+        except Exception as exc:
+            logger.error("Failed to persist query %s to DB: %s", state.query_id, exc)
 
     # Format chunks to match Pydantic schema strictly
     formatted_chunks = []
@@ -329,9 +330,9 @@ async def run_simple(query: str, db=None, user_id: Optional[str] = None) -> Dict
     
     query_id = str(uuid4())
     start_time = datetime.now(timezone.utc)
+    llm = get_llm()
     
     try:
-        # STEP 1: Retrieve top 5 chunks using basic hybrid search
         chunks = await retrieve(
             query=query, 
             strategy="hybrid_rerank", 
@@ -341,7 +342,6 @@ async def run_simple(query: str, db=None, user_id: Optional[str] = None) -> Dict
             user_id=user_id
         )
         
-        # STEP 2: Generate answer directly from chunks
         from app.services.iterative_refiner import _format_context
         formatted_context = _format_context(chunks)
         
@@ -356,7 +356,7 @@ Instructions:
 - Answer based ONLY on the provided context
 - If the context does not contain enough information, say so"""
 
-        response = await get_llm().ainvoke(prompt)
+        response = await llm.ainvoke(prompt)
         generated_answer = response.content if hasattr(response, "content") else str(response)
         
     except Exception as exc:
@@ -366,7 +366,6 @@ Instructions:
         
     latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     
-    # STEP 3: Save to queries table
     if db:
         try:
             from app.models.database import Query as DBQuery
@@ -381,7 +380,8 @@ Instructions:
                 user_id=user_id
             )
             db.add(db_query)
-            # Transaction lifecycle (commit/rollback) is managed by the get_db dependency
+        except Exception as exc:
+            logger.error("Failed to persist simple query %s to DB: %s", query_id, exc)
             
     return {
         "query_id": query_id,

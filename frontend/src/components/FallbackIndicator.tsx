@@ -1,5 +1,5 @@
 import { Globe, BrainCircuit, AlertOctagon, FileText } from "lucide-react";
-import { cn } from "../lib/utils";
+
 
 interface FallbackIndicatorProps {
   sourceLabel: string;

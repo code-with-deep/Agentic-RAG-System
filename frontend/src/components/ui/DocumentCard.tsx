@@ -1,4 +1,3 @@
-import React from 'react';
 import { cn } from '@/lib/utils';
 import { FileText, Trash2, Search, Calendar, Server } from 'lucide-react';
 import { Button } from './Button';
@@ -96,7 +95,9 @@ export function DocumentCard({ document, onQuery, onDelete }: DocumentCardProps)
           <Button variant="gradient" className="w-full" onClick={() => onQuery(document.id)}>
             <Search className="w-4 h-4 mr-2" /> Query Document
           </Button>
-
+          <Button variant="ghost" className="w-full text-semantic-danger hover:bg-semantic-danger/10" onClick={() => onDelete(document.id)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Delete
+          </Button>
         </div>
       </CardContent>
     </Card>

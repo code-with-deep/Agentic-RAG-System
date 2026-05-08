@@ -1,12 +1,11 @@
-import React from 'react';
 import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 interface EmptyStateProps {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
   className?: string;
 }
 

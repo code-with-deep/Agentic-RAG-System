@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import { useState, Fragment } from "react";
 import type {  EvaluationResult  } from '../types';
-import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, CartesianGrid } from "recharts";
 import { TrendingUp, ShieldCheck, CheckCircle2, ChevronDown, ChevronUp, Zap, Cpu } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -121,7 +121,7 @@ export function EvalDashboard({ result }: EvalDashboardProps) {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
         <h3 className="text-xl font-bold text-white mb-6">Query Router Accuracy</h3>
         <div className="flex flex-wrap gap-4">
-          {result.per_question_results.map((q: any) => {
+          {result.per_question_results.map((_: any) => {
             return null; // Used for calculating stats internally if needed
           })}
           <div className="w-full flex items-center justify-between p-4 border border-gray-800 bg-gray-950 rounded-xl">
@@ -154,7 +154,7 @@ export function EvalDashboard({ result }: EvalDashboardProps) {
                 const isPassed = q.agentic.overall_score >= 0.7; // arbitrary pass threshold
                 
                 return (
-                  <React.Fragment key={idx}>
+                  <Fragment key={idx}>
                     <tr 
                       className={cn(
                         "hover:bg-gray-800/30 cursor-pointer transition-colors",
@@ -222,7 +222,7 @@ export function EvalDashboard({ result }: EvalDashboardProps) {
                         </td>
                       </tr>
                     )}
-                  </React.Fragment>
+                  </Fragment>
                 );
               })}
             </tbody>

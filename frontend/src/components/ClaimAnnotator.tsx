@@ -1,5 +1,5 @@
 import type {  ClaimResult, AnnotationMap  } from '../types';
-import { CheckCircle2, XCircle, AlertTriangle, Info } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 
@@ -48,7 +48,7 @@ export function ClaimAnnotator({ answer, annotations, claims, hallucinationScore
           
           const isSupported = seg.annotation.status === "SUPPORTED";
           const isNotSupported = seg.annotation.status === "NOT_SUPPORTED";
-          const isContradicted = seg.annotation.status === "CONTRADICTED";
+
           const isHovered = activeClaim === seg.annotation.claim_text;
 
           const baseClass = "relative group cursor-help px-1 rounded transition-colors border-b-2";
@@ -151,7 +151,7 @@ export function ClaimAnnotator({ answer, annotations, claims, hallucinationScore
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
-              {claims.map((claim, idx) => (
+              {claims.map((claim, _idx) => (
                 <tr 
                   key={claim.claim_id} 
                   className={cn(

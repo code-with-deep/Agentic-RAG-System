@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent } from '@/components/ui/Card';
 import { ConfidenceBadge } from '@/components/ui/ConfidenceBadge';
 import { AgentThinkingSteps } from '@/components/ui/AgentThinkingSteps';
-import { ClaimHighlight } from '@/components/ui/ClaimHighlight';
-import { Scale, Zap, Cpu, ShieldCheck, Search, CheckCircle2 } from 'lucide-react';
+import { Scale, Zap, Cpu, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import ReactMarkdown from 'react-markdown';

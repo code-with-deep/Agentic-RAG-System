@@ -11,14 +11,6 @@ import type {
 
 let API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
-// Ensure the URL ends with /api for robustness in deployment
-if (API_URL.endsWith("/")) {
-  API_URL = API_URL.slice(0, -1);
-}
-if (!API_URL.endsWith("/api")) {
-  API_URL += "/api";
-}
-
 const client = axios.create({
   baseURL: API_URL,
 });
@@ -47,13 +39,23 @@ client.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor to extract clean error messages
+// Response interceptor to extract clean error messages and handle session expiry
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    let message = "An unexpected API error occurred.";
     const status = error.response?.status;
-    
+
+    // Handle 401 Unauthorized (JWT expired or invalid)
+    if (status === 401) {
+      console.warn("Session expired or invalid token. Redirecting to login...");
+      localStorage.removeItem("docmind_user");
+      // Use window.location for hard redirect as we are outside React context
+      if (window.location.pathname !== "/auth") {
+        window.location.href = "/auth";
+      }
+    }
+
+    let message = "An unexpected API error occurred.";
     if (error.response?.data?.detail) {
       const detail = error.response.data.detail;
       message = typeof detail === "string" ? detail : JSON.stringify(detail);
@@ -125,8 +127,8 @@ export async function runHallucinationCheck(text: string, context: string): Prom
 }
 
 export async function startBatchEvaluation(): Promise<{ job_id: string; message: string; estimated_minutes: number }> {
-  // Using default dataset_path as specified by the user's schema
-  const response = await client.post("/evaluate/batch", { dataset_path: "app/data/eval_dataset.json" });
+  // dataset_id "default" is used by the backend whitelist
+  const response = await client.post("/evaluation/run", { dataset_id: "default" });
   return response.data;
 }
 

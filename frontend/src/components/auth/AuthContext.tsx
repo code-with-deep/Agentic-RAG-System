@@ -6,6 +6,7 @@ export interface User {
   avatar_initials: string;
   joined_date: string;
   plan: 'free' | 'pro';
+  token: string;
 }
 
 interface AuthContextType {
@@ -25,9 +26,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedUser = localStorage.getItem('docmind_user');
     if (storedUser) {
       try {
-        setUser(JSON.parse(storedUser));
+        const parsed = JSON.parse(storedUser);
+        // Ensure stored user has a token — otherwise it's a stale fake session
+        if (parsed && parsed.token) {
+          setUser(parsed);
+        } else {
+          localStorage.removeItem('docmind_user');
+        }
       } catch (e) {
         console.error('Failed to parse stored user', e);
+        localStorage.removeItem('docmind_user');
       }
     }
     setIsLoading(false);

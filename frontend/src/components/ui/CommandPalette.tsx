@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Command } from 'cmdk';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Settings, BarChart2, MessageSquare, Scale, Calculator, Moon, Sun, Monitor } from 'lucide-react';
+import { Search, FileText, Settings, BarChart2, MessageSquare, Scale } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface CommandPaletteProps {
