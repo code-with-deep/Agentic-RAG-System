@@ -52,8 +52,14 @@ def get_chroma_collection():
     global _chroma_client, _chroma_collection
     if _chroma_collection is None:
         import chromadb
+        from chromadb.config import Settings as ChromaSettings
         logger.info("Initialising ChromaDB persistent client at: %s", settings.chroma_db_path)
-        _chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
+        
+        # Disable telemetry to fix the PostHog error and save memory
+        _chroma_client = chromadb.PersistentClient(
+            path=settings.chroma_db_path,
+            settings=ChromaSettings(anonymized_telemetry=False)
+        )
         _chroma_collection = _chroma_client.get_or_create_collection(
             name="agentic_rag_chunks",
             metadata={"hnsw:space": "cosine"},
@@ -382,7 +388,8 @@ def _store_chunks_in_chroma(chunks: List[dict], user_id: str) -> None:
     if not chunks:
         return
 
-    batch_size = 500
+    # Smaller batch size for Render Free Tier (prevents OOM)
+    batch_size = 50
     for start in range(0, len(chunks), batch_size):
         batch = chunks[start : start + batch_size]
         ids = [c["chunk_id"] for c in batch]
