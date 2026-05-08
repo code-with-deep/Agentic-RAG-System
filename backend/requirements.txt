@@ -1,4 +1,4 @@
-# Agentic RAG System - Dependencies
+# Agentic RAG System - Optimized for Render (CPU-Only)
 
 # Core API Framework
 fastapi==0.115.9
@@ -23,22 +23,27 @@ langchain==0.3.25
 langchain-community==0.3.24
 langchain-groq==0.3.2
 
+# CPU-Only Torch (Saves ~1.5GB of space and RAM)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
+
 # Vector Store and Embeddings
-chromadb==1.0.7
-sentence-transformers==4.1.0
+sentence-transformers==2.7.0
+chromadb==0.5.0
 
 # Retrieval
 rank-bm25==0.2.2
 
-# Document Parsing
+# Document Parsing (Lighter alternatives)
 pypdf==5.6.0
 docx2txt==0.8
-unstructured==0.17.2
 
 # Web Search
 tavily-python==0.5.0
 duckduckgo-search==8.0.1
 
 # Utilities
-python-magic==0.4.27
+python-magic-bin==0.4.14; sys_platform == 'win32'
+python-magic==0.4.27; sys_platform != 'win32'
 httpx==0.28.1
