@@ -239,15 +239,6 @@ export default function AuthPage() {
                 <label className="text-sm font-medium" style={{ color: '#1a1a1a' }}>
                   Password
                 </label>
-                {isLogin && (
-                  <a
-                    href="#"
-                    className="text-xs hover:underline"
-                    style={{ color: '#4f46e5' }}
-                  >
-                    Forgot password?
-                  </a>
-                )}
               </div>
               <Input
                 type="password"
