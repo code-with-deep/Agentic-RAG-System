@@ -8,6 +8,7 @@ import { Layout } from "./components/layout/Layout";
 // Public Pages
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 
 // Protected Pages
 import OnboardingPage from "./pages/OnboardingPage";
@@ -27,6 +28,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Protected Route: Onboarding (No Layout) */}
           <Route 

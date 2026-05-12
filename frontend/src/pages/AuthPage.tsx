@@ -5,16 +5,19 @@ import { Brain, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/auth/AuthContext';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -45,26 +48,32 @@ export default function AuthPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccessMsg('');
 
     try {
-      const endpoint = isLogin ? '/auth/login' : '/auth/register';
-      const payload = isLogin
-        ? { email, password }
-        : { name, email, password };
+      if (isForgotPassword) {
+        const response = await axios.post(`${API_URL}/auth/forgot-password`, { email });
+        setSuccessMsg(response.data.message);
+      } else {
+        const endpoint = isLogin ? '/auth/login' : '/auth/register';
+        const payload = isLogin
+          ? { email, password }
+          : { name, email, password };
 
-      const response = await axios.post(`${API_URL}${endpoint}`, payload);
-      const { token, user } = response.data;
+        const response = await axios.post(`${API_URL}${endpoint}`, payload);
+        const { token, user } = response.data;
 
-      login({
-        name: user.name,
-        email: user.email,
-        avatar_initials: user.avatar_initials,
-        joined_date: user.joined_date,
-        plan: user.plan,
-        token,
-      });
+        login({
+          name: user.name,
+          email: user.email,
+          avatar_initials: user.avatar_initials,
+          joined_date: user.joined_date,
+          plan: user.plan,
+          token,
+        });
 
-      navigate(isLogin ? '/dashboard' : '/onboarding', { replace: true });
+        navigate(isLogin ? '/dashboard' : '/onboarding', { replace: true });
+      }
     } catch (err: any) {
       const detail =
         err?.response?.data?.detail || err?.message || 'An unexpected error occurred.';
@@ -139,55 +148,64 @@ export default function AuthPage() {
           {/* Header */}
           <div className="mb-8 text-center lg:text-left">
             <h2 className="text-3xl font-bold mb-2" style={{ color: '#0a0a0a' }}>
-              {isLogin ? 'Welcome back' : 'Create an account'}
+              {isForgotPassword ? 'Reset your password' : isLogin ? 'Welcome back' : 'Create an account'}
             </h2>
             <p style={{ color: '#555555' }}>
-              {isLogin
+              {isForgotPassword
+                ? "Enter your email and we'll send you a reset link"
+                : isLogin
                 ? 'Enter your details to sign in to your workspace'
                 : 'Sign up to start chatting with your documents'}
             </p>
           </div>
 
           {/* Tabs */}
-          <div
-            className="flex p-1 rounded-lg mb-8"
-            style={{
-              background: '#f4f4f5',
-              border: '1px solid #e0e0e0',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => { setIsLogin(true); setError(''); }}
-              className="flex-1 py-2 text-sm font-medium rounded-md transition-all"
+          {!isForgotPassword && (
+            <div
+              className="flex p-1 rounded-lg mb-8"
               style={{
-                background: isLogin ? '#ffffff' : 'transparent',
-                color: isLogin ? '#0a0a0a' : '#666666',
-                border: isLogin ? '1px solid #d0d0d0' : '1px solid transparent',
-                boxShadow: isLogin ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                background: '#f4f4f5',
+                border: '1px solid #e0e0e0',
               }}
             >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsLogin(false); setError(''); }}
-              className="flex-1 py-2 text-sm font-medium rounded-md transition-all"
-              style={{
-                background: !isLogin ? '#ffffff' : 'transparent',
-                color: !isLogin ? '#0a0a0a' : '#666666',
-                border: !isLogin ? '1px solid #d0d0d0' : '1px solid transparent',
-                boxShadow: !isLogin ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
-            >
-              Sign Up
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => { setIsLogin(true); setError(''); setSuccessMsg(''); }}
+                className="flex-1 py-2 text-sm font-medium rounded-md transition-all"
+                style={{
+                  background: isLogin ? '#ffffff' : 'transparent',
+                  color: isLogin ? '#0a0a0a' : '#666666',
+                  border: isLogin ? '1px solid #d0d0d0' : '1px solid transparent',
+                  boxShadow: isLogin ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsLogin(false); setError(''); setSuccessMsg(''); }}
+                className="flex-1 py-2 text-sm font-medium rounded-md transition-all"
+                style={{
+                  background: !isLogin ? '#ffffff' : 'transparent',
+                  color: !isLogin ? '#0a0a0a' : '#666666',
+                  border: !isLogin ? '1px solid #d0d0d0' : '1px solid transparent',
+                  boxShadow: !isLogin ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
 
-          {/* Error message */}
+          {/* Error & Success messages */}
           {error && (
             <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
               {error}
+            </div>
+          )}
+          {successMsg && (
+            <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}>
+              {successMsg}
             </div>
           )}
 
@@ -195,7 +213,7 @@ export default function AuthPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
 
             {/* Name field (signup only) */}
-            {!isLogin && (
+            {!isLogin && !isForgotPassword && (
               <div className="space-y-1">
                 <label className="text-sm font-medium" style={{ color: '#1a1a1a' }}>
                   Full Name
@@ -234,48 +252,64 @@ export default function AuthPage() {
             </div>
 
             {/* Password */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium" style={{ color: '#1a1a1a' }}>
-                  Password
-                </label>
-              </div>
-              <Input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={{
-                  border: '1px solid #c8c8c8',
-                  color: '#0a0a0a',
-                  background: '#ffffff',
-                }}
-              />
-
-              {/* Password strength (signup only) */}
-              {!isLogin && password.length > 0 && (
-                <div className="mt-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs" style={{ color: '#888888' }}>
-                      Password strength
-                    </span>
-                    <span className="text-xs font-medium" style={{ color: '#444444' }}>
-                      {strengthLabel}
-                    </span>
-                  </div>
-                  <div
-                    className="h-1.5 w-full rounded-full overflow-hidden"
-                    style={{ background: '#e5e7eb' }}
-                  >
-                    <div
-                      className={`h-full transition-all duration-300 rounded-full ${strengthColor}`}
-                      style={{ width: `${strength}%` }}
-                    />
-                  </div>
+            {!isForgotPassword && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium" style={{ color: '#1a1a1a' }}>
+                    Password
+                  </label>
+                  {isLogin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setError('');
+                        setSuccessMsg('');
+                      }}
+                      className="text-xs font-medium hover:underline transition-all"
+                      style={{ color: '#6366f1' }}
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={{
+                    border: '1px solid #c8c8c8',
+                    color: '#0a0a0a',
+                    background: '#ffffff',
+                  }}
+                />
+
+                {/* Password strength (signup only) */}
+                {!isLogin && password.length > 0 && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs" style={{ color: '#888888' }}>
+                        Password strength
+                      </span>
+                      <span className="text-xs font-medium" style={{ color: '#444444' }}>
+                        {strengthLabel}
+                      </span>
+                    </div>
+                    <div
+                      className="h-1.5 w-full rounded-full overflow-hidden"
+                      style={{ background: '#e5e7eb' }}
+                    >
+                      <div
+                        className={`h-full transition-all duration-300 rounded-full ${strengthColor}`}
+                        style={{ width: `${strength}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Submit */}
             <button
@@ -292,6 +326,8 @@ export default function AuthPage() {
             >
               {loading
                 ? 'Please wait…'
+                : isForgotPassword
+                ? 'Send Reset Link'
                 : isLogin
                 ? 'Sign In'
                 : 'Create Account'}
@@ -312,7 +348,7 @@ export default function AuthPage() {
           </div>
 
           {/* Terms (signup only) */}
-          {!isLogin && (
+          {!isLogin && !isForgotPassword && (
             <p className="mt-8 text-center text-xs" style={{ color: '#888888' }}>
               By signing up, you agree to our{' '}
               <a
@@ -344,6 +380,23 @@ export default function AuthPage() {
               </a>
               .
             </p>
+          )}
+
+          {isForgotPassword && (
+            <div className="mt-8 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setError('');
+                  setSuccessMsg('');
+                }}
+                className="text-sm font-medium hover:underline transition-all"
+                style={{ color: '#6366f1' }}
+              >
+                Cancel and back to sign in
+              </button>
+            </div>
           )}
         </div>
       </div>
