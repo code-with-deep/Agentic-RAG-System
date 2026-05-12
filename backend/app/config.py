@@ -73,6 +73,13 @@ class Settings(BaseSettings):
         alias="FRONTEND_URLS",
     )
 
+    # ── Email Settings ────────────────────────────────
+    smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from_name: str = Field(default="DocMind AI", alias="SMTP_FROM_NAME")
+
     @property
     def allowed_origins(self) -> list[str]:
         """Convert the CSV string into a list of origins."""

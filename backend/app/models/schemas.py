@@ -58,6 +58,17 @@ class UpdateThresholdsRequest(BaseModel):
     top_k_final: Optional[int] = Field(default=None, ge=1, le=50)
 
 
+class ForgotPasswordRequest(BaseModel):
+    model_config = ConfigDict(strict=False)
+    email: str = Field(..., description="User's registered email address")
+
+
+class ResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(strict=False)
+    token: str = Field(..., description="JWT reset token")
+    new_password: str = Field(..., min_length=6, max_length=128, description="New password")
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Response Schemas
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
