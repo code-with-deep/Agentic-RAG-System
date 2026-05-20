@@ -1,0 +1,52 @@
+# Agentic RAG System - Optimized for Render (CPU-Only)
+
+# Core API Framework
+fastapi==0.115.9
+uvicorn[standard]==0.34.2
+gunicorn==23.0.0
+python-multipart==0.0.20
+python-dotenv==1.1.0
+pydantic-settings==2.9.1
+pydantic[email]==2.11.2
+
+# Authentication
+python-jose[cryptography]==3.4.0
+passlib[bcrypt]==1.7.4
+
+# Database
+sqlalchemy==2.0.40
+aiosqlite==0.21.0
+alembic==1.15.1
+
+# LangChain Ecosystem
+langchain==0.3.25
+langchain-community==0.3.24
+langchain-groq==0.3.2
+
+# CPU-Only Torch (Saves ~1.5GB of space and RAM)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
+
+# Vector Store and Embeddings
+sentence-transformers==2.7.0
+chromadb==0.5.0
+
+# Retrieval
+rank-bm25==0.2.2
+
+# Document Parsing (Lighter alternatives)
+pypdf==5.6.0
+docx2txt==0.8
+
+# Web Search
+tavily-python==0.5.0
+duckduckgo-search==8.0.1
+
+# Critical: Pin NumPy for Torch Compatibility
+numpy<2.0.0
+
+# Utilities
+python-magic-bin==0.4.14; sys_platform == 'win32'
+python-magic==0.4.27; sys_platform != 'win32'
+httpx==0.28.1

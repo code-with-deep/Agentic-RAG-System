@@ -1,0 +1,202 @@
+[
+  {
+    "id": "eval_001",
+    "question": "What was the total revenue reported in Q3?",
+    "reference_answer": "The total revenue reported in Q3 was $5 million.",
+    "expected_query_type": "FACTUAL",
+    "expected_strategy": "hybrid_rerank",
+    "difficulty": "easy",
+    "category": "factual",
+    "notes": "Direct data point lookup"
+  },
+  {
+    "id": "eval_002",
+    "question": "When is the product launch scheduled for the new CRM?",
+    "reference_answer": "The product launch for the new CRM is scheduled for November 15, 2024.",
+    "expected_query_type": "FACTUAL",
+    "expected_strategy": "hybrid_rerank",
+    "difficulty": "easy",
+    "category": "factual",
+    "notes": "Date lookup"
+  },
+  {
+    "id": "eval_003",
+    "question": "Who is the CEO of Acme Corp?",
+    "reference_answer": "The CEO of Acme Corp is Jane Doe.",
+    "expected_query_type": "FACTUAL",
+    "expected_strategy": "hybrid_rerank",
+    "difficulty": "easy",
+    "category": "factual",
+    "notes": "Named entity lookup"
+  },
+  {
+    "id": "eval_004",
+    "question": "What percentage of employees work remotely?",
+    "reference_answer": "Currently, 65% of employees work remotely.",
+    "expected_query_type": "FACTUAL",
+    "expected_strategy": "hybrid_rerank",
+    "difficulty": "medium",
+    "category": "factual",
+    "notes": "Percentage lookup"
+  },
+  {
+    "id": "eval_005",
+    "question": "How many units of the X-200 were sold last year?",
+    "reference_answer": "Last year, 15,000 units of the X-200 were sold.",
+    "expected_query_type": "FACTUAL",
+    "expected_strategy": "hybrid_rerank",
+    "difficulty": "medium",
+    "category": "factual",
+    "notes": "Number lookup"
+  },
+  {
+    "id": "eval_006",
+    "question": "Compare the growth rates across all regions and identify the top performer.",
+    "reference_answer": "North America grew by 12%, Europe by 8%, and Asia-Pacific by 25%. Asia-Pacific is the top performer.",
+    "expected_query_type": "ANALYTICAL",
+    "expected_strategy": "multi_query",
+    "difficulty": "hard",
+    "category": "analytical",
+    "notes": "Regional comparison"
+  },
+  {
+    "id": "eval_007",
+    "question": "What are the main differences between the Standard and Premium subscription tiers?",
+    "reference_answer": "The Premium tier includes 24/7 support and unlimited storage, whereas the Standard tier offers email support and 100GB storage.",
+    "expected_query_type": "ANALYTICAL",
+    "expected_strategy": "multi_query",
+    "difficulty": "medium",
+    "category": "analytical",
+    "notes": "Product comparison"
+  },
+  {
+    "id": "eval_008",
+    "question": "Why did the Q2 profits decline despite an increase in overall sales?",
+    "reference_answer": "Q2 profits declined due to a 30% increase in supply chain costs and higher marketing expenditures.",
+    "expected_query_type": "ANALYTICAL",
+    "expected_strategy": "multi_query",
+    "difficulty": "hard",
+    "category": "analytical",
+    "notes": "Cause and effect analysis"
+  },
+  {
+    "id": "eval_009",
+    "question": "How does the new privacy policy affect European customers compared to US customers?",
+    "reference_answer": "European customers must explicitly opt-in to data sharing due to GDPR, while US customers are opted-in by default but can opt-out.",
+    "expected_query_type": "ANALYTICAL",
+    "expected_strategy": "multi_query",
+    "difficulty": "hard",
+    "category": "analytical",
+    "notes": "Policy impact analysis"
+  },
+  {
+    "id": "eval_010",
+    "question": "What is the correlation between employee training hours and productivity scores?",
+    "reference_answer": "Departments with over 40 hours of training saw a 15% higher productivity score on average compared to those with less training.",
+    "expected_query_type": "ANALYTICAL",
+    "expected_strategy": "multi_query",
+    "difficulty": "medium",
+    "category": "analytical",
+    "notes": "Trend and correlation analysis"
+  },
+  {
+    "id": "eval_011",
+    "question": "Give me an overview of the key findings in the 2024 annual report.",
+    "reference_answer": "The 2024 annual report highlights record revenue of $100M, a successful expansion into the Asian market, and the launch of three new AI products.",
+    "expected_query_type": "SUMMARIZATION",
+    "expected_strategy": "section_based",
+    "difficulty": "medium",
+    "category": "summary",
+    "notes": "Document overview"
+  },
+  {
+    "id": "eval_012",
+    "question": "Summarize the executive summary of the Q3 board meeting.",
+    "reference_answer": "The board approved a $5M budget increase for R&D, appointed a new CFO, and reviewed the pending acquisition of TechStart Inc.",
+    "expected_query_type": "SUMMARIZATION",
+    "expected_strategy": "section_based",
+    "difficulty": "medium",
+    "category": "summary",
+    "notes": "Section overview"
+  },
+  {
+    "id": "eval_013",
+    "question": "What are the main takeaways from the employee satisfaction survey?",
+    "reference_answer": "Employees generally feel well-compensated but requested more flexible working hours and better career development programs.",
+    "expected_query_type": "SUMMARIZATION",
+    "expected_strategy": "section_based",
+    "difficulty": "medium",
+    "category": "summary",
+    "notes": "Survey summarization"
+  },
+  {
+    "id": "eval_014",
+    "question": "Briefly describe the new agile development process proposed in the engineering doc.",
+    "reference_answer": "The new process introduces 2-week sprints, daily stand-ups, and a mandatory code review phase before any merge to the main branch.",
+    "expected_query_type": "SUMMARIZATION",
+    "expected_strategy": "section_based",
+    "difficulty": "medium",
+    "category": "summary",
+    "notes": "Process summarization"
+  },
+  {
+    "id": "eval_015",
+    "question": "Can you explain that in simpler terms?",
+    "reference_answer": "Certainly. The system uses multiple steps to double-check its answers before showing them to you, ensuring higher accuracy.",
+    "expected_query_type": "CONVERSATIONAL",
+    "expected_strategy": "context_aware",
+    "difficulty": "easy",
+    "category": "conversational",
+    "notes": "Clarification request"
+  },
+  {
+    "id": "eval_016",
+    "question": "How does that relate to the previous point about budget cuts?",
+    "reference_answer": "The budget cuts directly impacted the R&D department, which is why the release of the new feature was delayed.",
+    "expected_query_type": "CONVERSATIONAL",
+    "expected_strategy": "context_aware",
+    "difficulty": "easy",
+    "category": "conversational",
+    "notes": "Follow-up question"
+  },
+  {
+    "id": "eval_017",
+    "question": "Could you provide an example of that?",
+    "reference_answer": "For example, if you ask about a policy from an old manual, the system will verify it against the newest employee handbook before answering.",
+    "expected_query_type": "CONVERSATIONAL",
+    "expected_strategy": "context_aware",
+    "difficulty": "easy",
+    "category": "conversational",
+    "notes": "Example request"
+  },
+  {
+    "id": "eval_018",
+    "question": "What is the current stock price of Apple?",
+    "reference_answer": "I don't have access to real-time stock prices. You can check a financial website for the current AAPL ticker price.",
+    "expected_query_type": "OUT_OF_SCOPE",
+    "expected_strategy": "fallback",
+    "difficulty": "easy",
+    "category": "out_of_scope",
+    "notes": "Real-time external info"
+  },
+  {
+    "id": "eval_019",
+    "question": "Who won the World Series in 2023?",
+    "reference_answer": "I don't have that information in my documents. My knowledge is limited to the provided company documentation.",
+    "expected_query_type": "OUT_OF_SCOPE",
+    "expected_strategy": "fallback",
+    "difficulty": "easy",
+    "category": "out_of_scope",
+    "notes": "General trivia"
+  },
+  {
+    "id": "eval_020",
+    "question": "Can you write a poem about artificial intelligence?",
+    "reference_answer": "While I am capable of generating a poem, my current role is to answer questions based on the provided company documents.",
+    "expected_query_type": "OUT_OF_SCOPE",
+    "expected_strategy": "fallback",
+    "difficulty": "easy",
+    "category": "out_of_scope",
+    "notes": "Creative task out of scope"
+  }
+]

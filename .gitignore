@@ -1,0 +1,53 @@
+# ── Python ──────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+
+# ── Node.js / Frontend ──────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+.vercel/
+.vite-inspect/
+
+# ── Environment & Secrets ───────────────────────────
+.env
+.env.*
+.venv
+pip-log.txt
+
+# ── Databases & Data (CRITICAL) ─────────────────────
+*.db
+*.sqlite3
+chroma_data/
+backend/chroma_data/
+data/
+backend/data/
+uploads/
+backend/uploads/
+*.log
+
+# ── IDE & OS ────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Alembic ─────────────────────────────────────────
+backend/migrations/__pycache__/
+backend/migrations/versions/__pycache__/
